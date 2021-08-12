@@ -211,9 +211,6 @@ class Patch:
         for k, v in dictionary.items():
             assert hasattr(self, k)
             current = getattr(self, k)
-            # if the values of current and v are different and current is a list,
-            # v will be a list of Nones interspersed with one or more ints.
-            # update v[i] to be current[i] where v[i] is None.
             if current != v and isinstance(current, list):
                 output[k] = list(starmap(action, zip(current, v)))
             elif current != v and isinstance(current, int):
