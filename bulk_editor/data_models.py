@@ -93,9 +93,7 @@ class Patch:
     ID_PATCH_MIDI_CTL2_CC_VAL: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
     # list of 16 integers, for each ctl func definition
     ID_PATCH_CTL_FUNC: list = field(
-        default_factory=lambda: [
-            0, 0, 0, 0, 7, 8, 9, 10, 11, 12, 13, 0, 15, 16, 17, 18
-        ]
+        default_factory=lambda: [1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
     )
     # list of 16 integers, for each ctl min value (0 or 1)
     ID_PATCH_CTL_MIN: list = field(default_factory=lambda: defaults.SIXTEEN_ZEROES)
