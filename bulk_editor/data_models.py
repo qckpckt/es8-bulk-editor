@@ -195,22 +195,62 @@ class Patch:
         }
 
     @staticmethod
-    def pick(old, new):
-        """Given two values, choose new if it is not None."""
+    def _pick(old, new):
+        """Given two values, choose new if it is not None, else return old."""
         return new if new is not None else old
 
-    def update(self, params: dict):
-        """Return a new Patch instance with updated parameters.
-        """
-        for k, v in params.items():
+    @staticmethod
+    def _mask(old, new):
+        """Given two values, return None if old and new match else return new."""
+        return None if old == new else new
+
+    def _mutate(self, mode: str, dictionary: dict) -> dict:
+        """Mutate the input dictionary based on the supplied mode."""
+        output = {}
+        action = getattr(self, mode)
+        for k, v in dictionary.items():
             assert hasattr(self, k)
             current = getattr(self, k)
             # if the values of current and v are different and current is a list,
             # v will be a list of Nones interspersed with one or more ints.
             # update v[i] to be current[i] where v[i] is None.
             if current != v and isinstance(current, list):
-                params[k] = list(starmap(self.pick, zip(current, v)))
-        return Patch(**{**asdict(self), **params})
+                output[k] = list(starmap(action, zip(current, v)))
+            elif current != v and isinstance(current, int):
+                output[k] = action(current, v)
+        return output
+
+    def update(self, mask: dict):
+        """Return a new Patch instance, with mask applied.
+
+        The input mask dictionary will only contain keys/values that are different
+        from either the factory default patch or the last state of the global_defaults.json.
+
+        If the input mask value is a list, all Nones in this list are replaced with values from
+        this Patch instance, and then the key/value pair are applied over the top of the field
+        values from this Patch instance to create a new instance in an 'upsert' action.
+
+        """
+        return Patch(**{**asdict(self), **self._mutate("_pick", mask)})
+
+    def mask(self, patch: dict) -> dict:
+        """Return a 'mask' dictionary created by comparing the `patch` dictionary
+        to this Patch instance.
+
+        A 'mask' in this case means a dictionary where, for each key/value from `patch`:
+
+        * if the value is a list:
+            * if the value from `patch` is different to this Patch instance's
+              version, for each index of the list, if the value matches the
+              value at the same index in this Patch instance's version of key,
+              the value is set to None. Then, save the resulting list to the
+              output dict.
+        * if the value is an int:
+            * if the value is different from this Patch instance's version of
+              key, pass that key on to the output dict.
+        """
+        return self._mutate("_mask", patch)
 
 
+# Calling patch with no parameters instantiates the factory default.
 DEFAULT_PATCH = Patch()

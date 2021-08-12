@@ -8,8 +8,15 @@ def default_values(n, multiple) -> tuple:
 
 
 def text_to_ord(text: str):
-    assert len(text) <= 16
-    return [ord(i) for i in text]
+    padding = 16 - len(text)
+    if padding < 0:
+        # cut the end off the title if it's longer than 16...
+        padded = text[:padding]
+    else:
+        # ...or stick spaces on the end until it's 16 characters.
+        padded = text + (' ' * padding)
+
+    return [ord(i) for i in padded]
 
 
 DEFAULT_PATCH_NAME = text_to_ord("BOSS ES-8")

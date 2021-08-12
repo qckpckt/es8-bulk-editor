@@ -1,6 +1,7 @@
 import argparse
 from dataclasses import asdict
 import json
+import os
 
 from .assign import set_global_assign_default
 from . import mappings
@@ -42,6 +43,11 @@ with open(BACKUP_FILE, "r") as infile, open(DEFAULTS_FILE, "r") as defaultsfile:
     backup_file = json.load(infile)
     global_defaults = json.load(defaultsfile)
 
+initial = False
+
+if not os.path.isfile(OUTPUT_FILE):
+    initial = True
+
 updated_patches, new_global_defaults = set_global_assign_default(
     assign_number=args.assign_number,
     current_state=backup_file["patch"],
@@ -50,7 +56,8 @@ updated_patches, new_global_defaults = set_global_assign_default(
     mode=args.mode,
     target=args.target,
     params=params,
-    force=args.force)
+    force=args.force,
+    initial=initial)
 
 backup_file["patch"] = [asdict(patch) for patch in updated_patches]
 

@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from . import data_models, defaults, errors, mappings
 
 
@@ -8,6 +10,7 @@ def set_global_assign_default(assign_number,
                               mode,
                               target,
                               params,
+                              initial=False,
                               force=False):
     """
         * Load currently used global defaults from global default file:
@@ -19,16 +22,20 @@ def set_global_assign_default(assign_number,
         * save patches to new backup file
     """
     # Apply current global defaults
-    global_defaults = data_models.Patch(**global_defaults)
+    current_global_defaults = data_models.Patch(**global_defaults)
     # Check if this assign already has a global default set
-    current_assign_state = global_defaults.get_assign(assign_number)
+    current_assign_state = current_global_defaults.get_assign(assign_number)
     default_assign_state = data_models.DEFAULT_PATCH.get_assign(assign_number)
     if current_assign_state != default_assign_state and not force:
         raise errors.OverridesDefault(f"Assign {assign_number} already has a default set.")
-    # Apply new global assign defaults
-    updated_defaults = global_defaults.update(build_assign_payload(assign_number, source, mode, target, params))
+    # update global defaults
+    updated_defaults = current_global_defaults.update(build_assign_payload(assign_number, source, mode, target, params))
+    # create masks from each patch in current state from
+    mask_base = data_models.DEFAULT_PATCH if initial else current_global_defaults
+    masks = [mask_base.mask(patch) for patch in current_state]
+    new_base_patch = data_models.DEFAULT_PATCH.update(asdict(updated_defaults))
     # Apply patch data back on top of thew new udpdated_defaults for each patch, return updated_defaults
-    return [updated_defaults.update(patch) for patch in current_state], updated_defaults
+    return [new_base_patch.update(mask) for mask in masks], updated_defaults
 
 
 def create_input_array(index, value, value_type, array_type):
