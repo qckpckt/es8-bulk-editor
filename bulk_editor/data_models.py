@@ -209,7 +209,6 @@ class Patch:
         output = {}
         action = getattr(self, mode)
         for k, v in dictionary.items():
-            assert hasattr(self, k)
             current = getattr(self, k)
             if current != v and isinstance(current, list):
                 output[k] = list(starmap(action, zip(current, v)))
