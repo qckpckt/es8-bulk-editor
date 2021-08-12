@@ -30,7 +30,7 @@ def set_global_assign_default(assign_number,
         raise errors.OverridesDefault(f"Assign {assign_number} already has a default set.")
     # update global defaults
     updated_defaults = current_global_defaults.update(build_assign_payload(assign_number, source, mode, target, params))
-    # create masks from each patch in current state from
+    # create masks from each patch in current state, using either the factory or global default as a base.
     mask_base = data_models.DEFAULT_PATCH if initial else current_global_defaults
     masks = [mask_base.mask(patch) for patch in current_state]
     new_base_patch = data_models.DEFAULT_PATCH.update(asdict(updated_defaults))
