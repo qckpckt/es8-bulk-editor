@@ -43,10 +43,8 @@ with open(BACKUP_FILE, "r") as infile, open(DEFAULTS_FILE, "r") as defaultsfile:
     backup_file = json.load(infile)
     global_defaults = json.load(defaultsfile)
 
-initial = False
-
-if not os.path.isfile(OUTPUT_FILE):
-    initial = True
+# If there is no output file, assume this has never been executed before and start from a blank slate.
+initial = os.path.isfile(OUTPUT_FILE)
 
 updated_patches, new_global_defaults = set_global_assign_default(
     assign_number=args.assign_number,
@@ -63,4 +61,5 @@ backup_file["patch"] = [asdict(patch) for patch in updated_patches]
 
 with open(OUTPUT_FILE, "w") as outfile, open(DEFAULTS_FILE, "w") as defaultsfile:
     json.dump(backup_file, outfile)
+    # TODO - probably want to save the new defaults file as a new file rather than overwriting.
     json.dump(asdict(new_global_defaults), defaultsfile)

@@ -1,11 +1,72 @@
 from dataclasses import dataclass, field, asdict
+from datetime import datetime
 from itertools import starmap
+import json
+from typing import List
 
 from . import defaults, mappings
 
 
-@dataclass()
+@dataclass
+class PatchList:
+
+    patch_list: List[dict]
+    global_default_patch_name: str = "global_default_patch_{date}.json"
+
+    @staticmethod
+    def _convert_to_index(bank: int, patch: int):
+        """The ES-8 has 800 patches arranged in 100 banks of 8.
+        The banks go from 0-99, and each patch in a bank is numbered 1-8.
+        The patch list is 0-indexed, so we must subtract 1 to get the correct index.
+        EG Bank 32, patch 4 would be ((32 + 1) * 8 + 4) - 1 = 267.
+        """
+        return (((bank + 1) * 8) + patch) - 1
+
+    def get_patch(self, bank: int, patch: int):
+        """Return a patch specified by bank and integer."""
+        return Patch(**self.patch_list[self._convert_to_index(bank, patch)])
+
+    def set_as_default(self, bank: int, patch: int, to_file: bool = True):
+        """Specify a patch as the default patch from which all others are based.
+
+        NOTE - if this is not in fact the default patch, IE there are patches that are in fact the factory
+               default instead, this method will produce unexpected results!
+        """
+        now = datetime.now()
+        self.default_patch = self.get_patch(bank, patch)
+        if to_file:
+            with open(self.global_default_patch_name.format(date=now.toisoformat()), "w") as outfile:
+                json.dump(asdict(self.default_patch), outfile)
+
+
+@dataclass
 class Patch:
+    """Dataclass that represents all of the individual fields for a patch.
+
+    **CORE CONCEPTS**
+
+    Mask:   A mask in this context is a dictionary representation of a patch which only contains fields
+            with values that are different from some base patch (either a global default or the factory default,
+            which is represented by calling Patch() with no kwargs.) Most of the fields in a Patch are arrays.
+            In this instance, the array will only contain values at indices that differ from the default. All
+            other entries will be `None`. This methodology allows for layers of changes to be applied while
+            preserving the unique aspects of each patch.
+
+    **KEY METHODS**
+
+    self.mask(patch):    Create a mask from a dictionary representation of a patch.
+
+    self.update(mask):   Return a new Patch instance which contains the merged result of the supplied mask with
+                         the state from the patch instance on which this method was called. Importantly, this method
+                         can be used to apply masks to one another! If a mask is used to instantiate an instance of
+                         Patch, then you can still call update with another mask, iteratively building up changes.
+                         Before these changes are resolved to a new patch list though, it is necessary to apply them as
+                         a mask to an instance of the Patch class which _does_ have values for every field, in order to
+                         avoid errors when submitting to an ES-8 unit.
+
+    self.get_assign(i):  Return all fields pertaining to the assign specified by an integer as a dictionary. Used to
+                         validate that an action will not overwrite an existing custom set global default for assigns.
+    """
 
     # list of 9 boolean integers, 1 for each loop + vol loop (9). 0: off, 1: on
     ID_PATCH_LOOP_SW_LOOP: list = field(default_factory=lambda: defaults.NINE_ZEROES)
