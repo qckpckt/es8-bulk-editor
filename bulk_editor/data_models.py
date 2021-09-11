@@ -82,7 +82,9 @@ class PatchList:
         """Return a patch specified by bank and integer."""
         return self.patches[self._convert_to_index(bank, patch)]
 
-    def set_as_default(self, bank: int, patch: int, to_file: bool = True):
+    def set_as_default(
+        self, bank: int, patch: int, to_file: bool = False, no_return: bool = True
+    ):
         """Specify a patch as the default patch from which all others are based.
 
         NOTE - if this is not in fact the default patch, IE there are patches that are in fact the factory
@@ -108,9 +110,8 @@ class PatchList:
             )
             self._update_states(new_default_state)
 
-        now = datetime.now()
-
         if to_file:
+            now = datetime.now()
             # Update the current defaults plus save a backup copy of this new state.
             # TODO - also write out the previous default state? Not sure if this is necessary.
             backup_file = (
@@ -123,7 +124,7 @@ class PatchList:
                 [backup_file, current_default_file],
             )
 
-        return self.latest_default_state
+        return None if no_return else self.latest_default_state
 
     def _update_states(self, new_state):
         """Add new_state to self.states list.
@@ -261,16 +262,16 @@ class Patch:
     # TODO: figure out the 2nd half of this list.
     ID_PATCH_LOOP_POSITION: list = field(
         default_factory=lambda: [
-            8,   # ^
-            7,   # |
-            6,   # |
-            5,   # |
-            4,   # Loops
-            3,   # |
-            2,   # |
-            1,   # |
-            0,   # v
-            9,   # ^
+            8,  # ^
+            7,  # |
+            6,  # |
+            5,  # |
+            4,  # Loops
+            3,  # |
+            2,  # |
+            1,  # |
+            0,  # v
+            9,  # ^
             10,  # |
             11,  # |
             12,  # |

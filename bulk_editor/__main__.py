@@ -1,7 +1,6 @@
 import argparse
 from dataclasses import asdict
 import json
-import os
 
 from .data_models import PatchList
 from .loggers import init_logging
@@ -12,8 +11,27 @@ init_logging(log_file="bulk_editor.log")
 BACKUP_FILE = "test_1.bel"
 OUTPUT_FILE = "test_output.bel"
 DEFAULTS_FILE = "global_defaults.json"
+VALID_ACTIONS = {
+    "set_assign": lambda patch_list, args: set_assign(patch_list, args),
+    "set_default_patch": lambda patch_list, args: set_default_patch(patch_list, args),
+}
+
+
+def set_assign(patch_list, args):
+    required_args = ["assign_number", "source", "mode", "target", "params"]
+    payload = {k: getattr(args, k) for k in required_args}
+    return patch_list.update_assign(**payload)
+
+
+def set_default_patch(patch_list, args):
+    bank, patch = [int(i) for i in getattr("coords", args).split(":")]
+    patch_list.set_as_default(bank, patch)
+    return patch_list.apply_default()
+
 
 parser = argparse.ArgumentParser()
+
+parser.add_argument("action", type=str, choices=VALID_ACTIONS.keys())
 
 parser.add_argument(
     "-a",
@@ -31,31 +49,23 @@ parser.add_argument(
     "-t", "--target", type=str, choices=mappings.PATCH_ASSIGN_TARGET_ORDER
 )
 parser.add_argument("-p", "--params", type=str, default="noop")
+parser.add_argument("-c", "--coords", type=str)
 parser.add_argument("-f", "--force", action="store_true", default=False)
 
 args = parser.parse_args()
 
 if args.params != "noop":
     with open(args.params, "r") as paramfile:
-        params = json.load(paramfile)
+        args.params = json.load(paramfile)
 else:
-    params = {}
+    args.params = {}
 
 with open(BACKUP_FILE, "r") as infile:
     backup_file = json.load(infile)
 
-# If there is no output file, assume this has never been executed before and start from a blank slate.
-initial = os.path.isfile(OUTPUT_FILE)
-
 patch_list = PatchList(patches=backup_file["patch"])
 
-updated_patches, new_global_defaults = patch_list.update_assign(
-    assign_number=args.assign_number,
-    source=args.source,
-    mode=args.mode,
-    target=args.target,
-    params=params,
-)
+updated_patches, new_global_defaults = VALID_ACTIONS[args.action](patch_list, args)
 
 backup_file["patch"] = [asdict(patch) for patch in updated_patches]
 
