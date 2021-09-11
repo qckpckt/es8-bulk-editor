@@ -1,14 +1,16 @@
 """Defaults for patch instance and accompanying helper functions.
 """
 
+MAX_PATCH_NAME_LENGTH = 16
 
-def default_values(n, multiple) -> tuple:
+
+def default_values(n, multiple) -> list:
     """Create a list of n of length multiple"""
     return [n] * multiple
 
 
 def text_to_ord(text: str):
-    padding = 16 - len(text)
+    padding = MAX_PATCH_NAME_LENGTH - len(text)
     if padding < 0:
         # cut the end off the title if it's longer than 16...
         padded = text[:padding]

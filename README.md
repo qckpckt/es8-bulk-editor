@@ -20,13 +20,13 @@ This tool is being developed in order to provide the ability to make edits globa
 Example - set Num8 to be tap tempo globally using assign 1
 
 ```shell
-$ python -m bulk_editor --assign-number 1 --source Num8 --mode MOM --target 'BPM: Tap' --params: params.json
+$ python -m bulk_editor --assign_number 1 --source Num8 --mode MOM --target 'BPM: Tap' --params: params.json
 ```
 
 Example - set MemM to change value of CTl1 globally using assign 2, overwriting any previous global setting for assign 2
 
 ```shell
-$ python -m bulk_editor --asign-number 2 --source MemM --mode TGL --target 'E CTL: CTL1' --params: params.json --force
+$ python -m bulk_editor --assign_number 2 --source MemM --mode TGL --target 'E.CTL: CTL1' --params: params.json --force
 ```
 
 ## How it works

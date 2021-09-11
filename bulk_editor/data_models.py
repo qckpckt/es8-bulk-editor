@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
+from functools import reduce
 from itertools import starmap
 import json
 import logging
 import os
-from typing import List
 
 from . import defaults, mappings
 
@@ -26,11 +26,15 @@ class PatchCoords:
     patch: int
 
 
-def get_global_defaults_from_file() -> dict:
-    global_defaults = {}
+def get_global_defaults_from_file():
+    global_defaults = DEFAULT_PATCH
     if os.path.isfile(GLOBAL_DEFAULTS_FILE):
         with open("{GLOBAL_DEFAULTS_FILE}.json", "r") as infile:
-            global_defaults = json.load(infile)
+            global_defaults = Patch(**json.load(infile))
+            if global_defaults.is_mask:
+                # if the supplied global default file is actually a mask,
+                # apply it to the factory default so that it is a full Patch.
+                global_defaults = DEFAULT_PATCH.update(**asdict(global_defaults))
     return global_defaults
 
 
@@ -39,17 +43,13 @@ class PatchList:
     """Class representing data structure of patch list element of backup file.
 
     Contains methods pertaining to the manipulation of the patch list.
-
-    TODO - Currently, the data type of patches is in flux in this class. Generally they are stored as pure dictionaries,
-           But some methods require manipulation that needs the patch to be an instatiated Patch() instance. A decision
-           should be made on where and when patches should be dictionaries and Patch instances.
     """
 
-    patch_list: List[dict]
+    patches: list
     global_defaults_name: str = GLOBAL_DEFAULTS_FILE
     global_defaults_backup: str = "{GLOBAL_DEFAULTS_FILE}_{date}"
-    default_patch: dict = field(default_factory=lambda: get_global_defaults_from_file())
-    prev_default_patch: dict = field(default_factory=lambda: asdict(Patch()))
+    states: list = field(default_factory=lambda: [get_global_defaults_from_file()])
+    _patches: list = field(init=False, repr=False)
 
     @staticmethod
     def _convert_to_index(bank: int, patch: int):
@@ -60,12 +60,30 @@ class PatchList:
         """
         return (((bank + 1) * 8) + patch) - 1
 
+    @property
+    def patches(self):
+        return self._patches
+
+    @patches.setter
+    def patches(self, patches: list):
+        """Take in a list of dicts and return a list of initialized Patch instances."""
+        self._patches = map(lambda p: Patch(**p), patches)
+
+    @property
+    def initial_default_state(self):
+        return self.states[0]
+
+    @property
+    def latest_default_state(self):
+        """Collapse self.states down to a single Patch instance representing the latest default state."""
+        return reduce(lambda state, mask: state.update(mask), self.states)
+
     def get_patch(self, bank: int, patch: int):
         """Return a patch specified by bank and integer."""
-        return self.patch_list[self._convert_to_index(bank, patch)]
+        return self.patches[self._convert_to_index(bank, patch)]
 
     def set_as_default(
-        self, bank: int, patch: int, to_file: bool = True, as_dict: bool = False
+        self, bank: int, patch: int, to_file: bool = True
     ):
         """Specify a patch as the default patch from which all others are based.
 
@@ -78,22 +96,19 @@ class PatchList:
         :type patch: int
         :param to_file: boolean indicating whether to write out patch to file (default True)
         :type to_file: bool
-        :param as_dict: boolean indicating whether to return patch as a dictionary or a Patch()
-        :type as_dict: bool
-        :return: Patch instance representing default patch or dictionary depending on as_dict state.
-        :rtype: Patch() or dict
+        :return: Patch instance representing default patch
+        :rtype: Patch
         """
-        new_default_patch = self.get_patch(bank, patch)
+        new_default_state = self.get_patch(bank, patch)
 
-        if self.default_patch:
-            if new_default_patch == self.default_patch:
-                logging.info(f"Patch {bank}:{patch} is already the default.")
-                return self.default_patch
-            else:
-                logging.info(
-                    f"Patch {bank}:{patch} is not the currently specified default patch. Updating state."
-                )
-                self._shuffle_defaults(new_default_patch)
+        if new_default_state == self.latest_default_state:
+            logging.info(f"Patch {bank}:{patch} is already the default.")
+            return self.latest_default_state
+        else:
+            logging.info(
+                f"Patch {bank}:{patch} is not the currently specified default patch. Updating state."
+            )
+            self._update_states(new_default_state)
 
         now = datetime.now()
 
@@ -104,32 +119,27 @@ class PatchList:
                 f"{self.global_defaults_backup.format(date=now.toisoformat())}.json"
             )
             current_default_file = f"{self.global_defaults_name}.json"
-            with open(backup_file, "w") as backupfile, open(
-                current_default_file, "w"
-            ) as defaultfile:
-                json.dump(asdict(self.default_patch), defaultfile)
-                json.dump(asdict(self.default_patch), backupfile)
 
-        return Patch(**self.default_patch) if not as_dict else self.default_patch
+            map(lambda f: self.render_to_file(f, "latest_default_state"), [backup_file, current_default_file])
 
-    def _shuffle_defaults(self, new):
-        if self.default_patch:
-            # only overwrite prev_default_patch if default_patch actually has a value.
-            self.prev_default_patch = self.default_patch
-        self.default_patch = new
+        return self.latest_default_state
 
-    def update_default(self, mask: dict):
-        """Update the default patch using a supplied mask."""
-        curr_default = Patch(**self.default_patch)
-        new_default = curr_default.update(mask)
-        self._shuffle_defaults(asdict(new_default))
+    def _update_states(self, new_state):
+        """Add new_state to self.states list.
+
+        the newest state is the end of the list.
+        """
+        if isinstance(new_state, Patch):
+            new_state = asdict(new_state)
+
+        self.states.append(new_state)
 
     def apply_default(self, factory: bool = False, overwrite: bool = False):
-        """Apply self.default_patch to all patches.
+        """Apply self.latest_default_state to all patches.
 
         Raise error if no default patch is set and factory is False (default).
 
-        Assumes that self.default_patch is *not* the currently applied default patch.
+        Assumes that self.latest_default_state is *not* the currently applied default patch.
 
         :param factory:   Set to True to apply the factory default to all patches.
         :type factory:    bool
@@ -138,32 +148,72 @@ class PatchList:
         :type overwrite:  bool
         """
 
-        if not hasattr(self, "default_patch") and not factory:
-            raise NoDefaultSet("No default_patch set.")
-
         if factory:
-            # set whatever the current default patch is to the factory,
-            # and store whatever it was to self.prev_default_patch (unless it was nothing)
-            self._shuffle_defaults(asdict(Patch()))
+            self._update_states(DEFAULT_PATCH)
 
         if overwrite:
             logging.warning("Destructive action! This will overwite data!")
-            self.patch_list = [self.default_patch * 800]
+            self.patches = [self.latest_default_state * 800]
             return
 
-        self._apply(self.prev_default_patch, self.default_patch)
+        self._apply()
 
-    def _apply(self, prev_state, new_state):
-        """Apply new_state to patches, using prev_state as basis to create patch masks."""
+    @staticmethod
+    def create_input_array(index, value, value_type, array_type):
+        input_array = defaults.default_values(None, mappings.array_lengths_map[array_type])
+        if value_type == "integer":
+            input_array[index] = value
+        else:
+            input_array[index] = mappings.value_type_map[value_type].index(value)
+        return input_array
+
+    def update_assign(self, assign_number: int, source: str, mode: str, target: str, params: dict):
+        """update self.latest_default_state's assign number assign_number"""
+        index = assign_number - 1
+        non_assign_params = {}
+        if source in mappings.ES8_FOOTSWITCHES:
+            # if the assign is a footswitch of the ES-8, then disable the normal
+            # functionality of the footswitch globally.
+            non_assign_params["ID_PATCH_CTL_FUNC"] = self.create_input_array(
+                mappings.ES8_FOOTSWITCHES.index(source), "OFF", "ctl_func", "ctl_func"
+            )
+        mask = dict(
+            ID_PATCH_ASSIGN_SOURCE=self.create_input_array(index, source, "source", "assign"),
+            ID_PATCH_ASSIGN_TARGET=self.create_input_array(index, target, "target", "assign"),
+            ID_PATCH_ASSIGN_MODE=self.create_input_array(index, mode, "mode", "assign"),
+            ID_PATCH_ASSIGN_SW=self.create_input_array(
+                index, 1, "integer", "assign"
+            ),  # turn on patch assign
+            # NOTE: This assumes that _all_ params entries will _always_ be integers only!
+            **{
+                k: self.create_input_array(index, v, "integer", "assign")
+                for (k, v) in params.items()
+            },
+            **non_assign_params,
+        )
+        self._update_states(mask)
+        self._apply()
+        return self.patches, self.latest_default_state
+
+    def _apply(self):
+        """Apply self.latest_default_state to patches, using self.initial_default_state to create masks."""
         # create patch masks
-        patch_masks = self.patch_list.map(lambda p: prev_state.mask(p))
+        patch_masks = map(lambda patch: self.initial_default_state.mask(asdict(patch)), self.patches)
         # Apply patch masks to new default state
-        self.patch_list = patch_masks.map(lambda p: asdict(new_state.update(p)))
+        self.patches = map(lambda mask: asdict(self.latest_default_state.update(mask)), patch_masks)
+        # Reset the states stack
+        new_initial_state = self.latest_default_state
+        self.states = [new_initial_state]
+
+    def render_to_file(self, filename: str, attribute: str):
+        attr = getattr(self, attribute)
+        with open(filename, "w") as outfile:
+            json.dump(attr, outfile)
 
 
 @dataclass
 class Patch:
-    """Dataclass that represents all of the individual fields for a patch.
+    """Dataclass that bundles together all of the individual fields and related methods for a patch.
 
     **CORE CONCEPTS**
 
@@ -501,6 +551,15 @@ class Patch:
               key, pass that key on to the output dict.
         """
         return self._mutate("_mask", patch)
+
+    @property
+    def is_mask(self):
+        """Return True if this Patch instance is a "mask"
+        IE if any of the list attributes contain Nones.
+        """
+        for attr in asdict(self).values():
+            if isinstance(attr, list):
+                return len([i for i in attr if i is None]) > 0
 
 
 # Calling patch with no parameters instantiates the factory default.

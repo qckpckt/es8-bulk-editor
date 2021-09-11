@@ -3,7 +3,7 @@ from dataclasses import asdict
 import json
 import os
 
-from .assign import set_global_assign_default
+from .data_models import PatchList
 from .loggers import init_logging
 from . import mappings
 
@@ -41,23 +41,20 @@ if args.params != "noop":
 else:
     params = {}
 
-with open(BACKUP_FILE, "r") as infile, open(DEFAULTS_FILE, "r") as defaultsfile:
+with open(BACKUP_FILE, "r") as infile:
     backup_file = json.load(infile)
-    global_defaults = json.load(defaultsfile)
 
 # If there is no output file, assume this has never been executed before and start from a blank slate.
 initial = os.path.isfile(OUTPUT_FILE)
 
-updated_patches, new_global_defaults = set_global_assign_default(
+patch_list = PatchList(patches=backup_file["patch"])
+
+updated_patches, new_global_defaults = patch_list.update_assign(
     assign_number=args.assign_number,
-    current_state=backup_file["patch"],
-    global_defaults=global_defaults,
     source=args.source,
     mode=args.mode,
     target=args.target,
-    params=params,
-    force=args.force,
-    initial=initial,
+    params=params
 )
 
 backup_file["patch"] = [asdict(patch) for patch in updated_patches]
