@@ -54,7 +54,7 @@ updated_patches, new_global_defaults = patch_list.update_assign(
     source=args.source,
     mode=args.mode,
     target=args.target,
-    params=params
+    params=params,
 )
 
 backup_file["patch"] = [asdict(patch) for patch in updated_patches]

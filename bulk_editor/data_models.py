@@ -82,9 +82,7 @@ class PatchList:
         """Return a patch specified by bank and integer."""
         return self.patches[self._convert_to_index(bank, patch)]
 
-    def set_as_default(
-        self, bank: int, patch: int, to_file: bool = True
-    ):
+    def set_as_default(self, bank: int, patch: int, to_file: bool = True):
         """Specify a patch as the default patch from which all others are based.
 
         NOTE - if this is not in fact the default patch, IE there are patches that are in fact the factory
@@ -120,7 +118,10 @@ class PatchList:
             )
             current_default_file = f"{self.global_defaults_name}.json"
 
-            map(lambda f: self.render_to_file(f, "latest_default_state"), [backup_file, current_default_file])
+            map(
+                lambda f: self.render_to_file(f, "latest_default_state"),
+                [backup_file, current_default_file],
+            )
 
         return self.latest_default_state
 
@@ -160,14 +161,18 @@ class PatchList:
 
     @staticmethod
     def create_input_array(index, value, value_type, array_type):
-        input_array = defaults.default_values(None, mappings.array_lengths_map[array_type])
+        input_array = defaults.default_values(
+            None, mappings.array_lengths_map[array_type]
+        )
         if value_type == "integer":
             input_array[index] = value
         else:
             input_array[index] = mappings.value_type_map[value_type].index(value)
         return input_array
 
-    def update_assign(self, assign_number: int, source: str, mode: str, target: str, params: dict):
+    def update_assign(
+        self, assign_number: int, source: str, mode: str, target: str, params: dict
+    ):
         """update self.latest_default_state's assign number assign_number"""
         index = assign_number - 1
         non_assign_params = {}
@@ -178,8 +183,12 @@ class PatchList:
                 mappings.ES8_FOOTSWITCHES.index(source), "OFF", "ctl_func", "ctl_func"
             )
         mask = dict(
-            ID_PATCH_ASSIGN_SOURCE=self.create_input_array(index, source, "source", "assign"),
-            ID_PATCH_ASSIGN_TARGET=self.create_input_array(index, target, "target", "assign"),
+            ID_PATCH_ASSIGN_SOURCE=self.create_input_array(
+                index, source, "source", "assign"
+            ),
+            ID_PATCH_ASSIGN_TARGET=self.create_input_array(
+                index, target, "target", "assign"
+            ),
             ID_PATCH_ASSIGN_MODE=self.create_input_array(index, mode, "mode", "assign"),
             ID_PATCH_ASSIGN_SW=self.create_input_array(
                 index, 1, "integer", "assign"
@@ -198,9 +207,13 @@ class PatchList:
     def _apply(self):
         """Apply self.latest_default_state to patches, using self.initial_default_state to create masks."""
         # create patch masks
-        patch_masks = map(lambda patch: self.initial_default_state.mask(asdict(patch)), self.patches)
+        patch_masks = map(
+            lambda patch: self.initial_default_state.mask(asdict(patch)), self.patches
+        )
         # Apply patch masks to new default state
-        self.patches = map(lambda mask: asdict(self.latest_default_state.update(mask)), patch_masks)
+        self.patches = map(
+            lambda mask: asdict(self.latest_default_state.update(mask)), patch_masks
+        )
         # Reset the states stack
         new_initial_state = self.latest_default_state
         self.states = [new_initial_state]
@@ -247,30 +260,29 @@ class Patch:
     #   * idx[9-21]: 9 then 10-12 listed twice and 13-15 listed twice. Use unknown.
     # TODO: figure out the 2nd half of this list.
     ID_PATCH_LOOP_POSITION: list = field(
-        #                        <---------loops--------->  <--------------------unknown-------------------->
         default_factory=lambda: [
-            8,
-            7,
-            6,
-            5,
-            4,
-            3,
-            2,
-            1,
-            0,
-            9,
-            10,
-            11,
-            12,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            13,
-            14,
-            15,
+            8,   # ^
+            7,   # |
+            6,   # |
+            5,   # |
+            4,   # Loops
+            3,   # |
+            2,   # |
+            1,   # |
+            0,   # v
+            9,   # ^
+            10,  # |
+            11,  # |
+            12,  # |
+            10,  # |
+            11,  # |
+            12,  # idk
+            13,  # |
+            14,  # |
+            15,  # |
+            13,  # |
+            14,  # |
+            15,  # v
         ]
     )
     # 0: auto, 1: manual
