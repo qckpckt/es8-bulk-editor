@@ -2,16 +2,54 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from itertools import starmap
 import json
+import logging
+import os
 from typing import List
 
 from . import defaults, mappings
 
+GLOBAL_DEFAULTS_FILE = "global_defaults"
+
+
+class BulkEditorError(Exception):
+    pass
+
+
+class NoDefaultSet(BulkEditorError):
+    pass
+
+
+@dataclass
+class PatchCoords:
+
+    bank: int
+    patch: int
+
+
+def get_global_defaults_from_file() -> dict:
+    global_defaults = {}
+    if os.path.isfile(GLOBAL_DEFAULTS_FILE):
+        with open("{GLOBAL_DEFAULTS_FILE}.json", "r") as infile:
+            global_defaults = json.load(infile)
+    return global_defaults
+
 
 @dataclass
 class PatchList:
+    """Class representing data structure of patch list element of backup file.
+
+    Contains methods pertaining to the manipulation of the patch list.
+
+    TODO - Currently, the data type of patches is in flux in this class. Generally they are stored as pure dictionaries,
+           But some methods require manipulation that needs the patch to be an instatiated Patch() instance. A decision
+           should be made on where and when patches should be dictionaries and Patch instances.
+    """
 
     patch_list: List[dict]
-    global_default_patch_name: str = "global_default_patch_{date}.json"
+    global_defaults_name: str = GLOBAL_DEFAULTS_FILE
+    global_defaults_backup: str = "{GLOBAL_DEFAULTS_FILE}_{date}"
+    default_patch: dict = field(default_factory=lambda: get_global_defaults_from_file())
+    prev_default_patch: dict = field(default_factory=lambda: asdict(Patch()))
 
     @staticmethod
     def _convert_to_index(bank: int, patch: int):
@@ -24,19 +62,103 @@ class PatchList:
 
     def get_patch(self, bank: int, patch: int):
         """Return a patch specified by bank and integer."""
-        return Patch(**self.patch_list[self._convert_to_index(bank, patch)])
+        return self.patch_list[self._convert_to_index(bank, patch)]
 
-    def set_as_default(self, bank: int, patch: int, to_file: bool = True):
+    def set_as_default(
+        self, bank: int, patch: int, to_file: bool = True, as_dict: bool = False
+    ):
         """Specify a patch as the default patch from which all others are based.
 
         NOTE - if this is not in fact the default patch, IE there are patches that are in fact the factory
                default instead, this method will produce unexpected results!
+
+        :param bank: bank number for default patch
+        :type bank: int
+        :param patch: patch number for default patch
+        :type patch: int
+        :param to_file: boolean indicating whether to write out patch to file (default True)
+        :type to_file: bool
+        :param as_dict: boolean indicating whether to return patch as a dictionary or a Patch()
+        :type as_dict: bool
+        :return: Patch instance representing default patch or dictionary depending on as_dict state.
+        :rtype: Patch() or dict
         """
+        new_default_patch = self.get_patch(bank, patch)
+
+        if self.default_patch:
+            if new_default_patch == self.default_patch:
+                logging.info(f"Patch {bank}:{patch} is already the default.")
+                return self.default_patch
+            else:
+                logging.info(
+                    f"Patch {bank}:{patch} is not the currently specified default patch. Updating state."
+                )
+                self._shuffle_defaults(new_default_patch)
+
         now = datetime.now()
-        self.default_patch = self.get_patch(bank, patch)
+
         if to_file:
-            with open(self.global_default_patch_name.format(date=now.toisoformat()), "w") as outfile:
-                json.dump(asdict(self.default_patch), outfile)
+            # Update the current defaults plus save a backup copy of this new state.
+            # TODO - also write out the previous default state? Not sure if this is necessary.
+            backup_file = (
+                f"{self.global_defaults_backup.format(date=now.toisoformat())}.json"
+            )
+            current_default_file = f"{self.global_defaults_name}.json"
+            with open(backup_file, "w") as backupfile, open(
+                current_default_file, "w"
+            ) as defaultfile:
+                json.dump(asdict(self.default_patch), defaultfile)
+                json.dump(asdict(self.default_patch), backupfile)
+
+        return Patch(**self.default_patch) if not as_dict else self.default_patch
+
+    def _shuffle_defaults(self, new):
+        if self.default_patch:
+            # only overwrite prev_default_patch if default_patch actually has a value.
+            self.prev_default_patch = self.default_patch
+        self.default_patch = new
+
+    def update_default(self, mask: dict):
+        """Update the default patch using a supplied mask."""
+        curr_default = Patch(**self.default_patch)
+        new_default = curr_default.update(mask)
+        self._shuffle_defaults(asdict(new_default))
+
+    def apply_default(self, factory: bool = False, overwrite: bool = False):
+        """Apply self.default_patch to all patches.
+
+        Raise error if no default patch is set and factory is False (default).
+
+        Assumes that self.default_patch is *not* the currently applied default patch.
+
+        :param factory:   Set to True to apply the factory default to all patches.
+        :type factory:    bool
+        :param overwrite: Set to True to overwrite the current state of each patch with the default patch.
+                          NOTE - destructive operation!
+        :type overwrite:  bool
+        """
+
+        if not hasattr(self, "default_patch") and not factory:
+            raise NoDefaultSet("No default_patch set.")
+
+        if factory:
+            # set whatever the current default patch is to the factory,
+            # and store whatever it was to self.prev_default_patch (unless it was nothing)
+            self._shuffle_defaults(asdict(Patch()))
+
+        if overwrite:
+            logging.warning("Destructive action! This will overwite data!")
+            self.patch_list = [self.default_patch * 800]
+            return
+
+        self._apply(self.prev_default_patch, self.default_patch)
+
+    def _apply(self, prev_state, new_state):
+        """Apply new_state to patches, using prev_state as basis to create patch masks."""
+        # create patch masks
+        patch_masks = self.patch_list.map(lambda p: prev_state.mask(p))
+        # Apply patch masks to new default state
+        self.patch_list = patch_masks.map(lambda p: asdict(new_state.update(p)))
 
 
 @dataclass
@@ -76,7 +198,30 @@ class Patch:
     # TODO: figure out the 2nd half of this list.
     ID_PATCH_LOOP_POSITION: list = field(
         #                        <---------loops--------->  <--------------------unknown-------------------->
-        default_factory=lambda: [8, 7, 6, 5, 4, 3, 2, 1, 0, 9, 10, 11, 12, 10, 11, 12, 13, 14, 15, 13, 14, 15]
+        default_factory=lambda: [
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            0,
+            9,
+            10,
+            11,
+            12,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            13,
+            14,
+            15,
+        ]
     )
     # 0: auto, 1: manual
     ID_PATCH_MIXER_MODE: int = 0
@@ -139,22 +284,47 @@ class Patch:
     # list of 8 integers, 1 for each patch midi preset channel
     ID_PATCH_MIDI_TX_CH: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
     # list of 8 integers, 1 for each LSB setting for each patch midi preset
-    ID_PATCH_MIDI_PC_BANK_LSB: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
+    ID_PATCH_MIDI_PC_BANK_LSB: list = field(
+        default_factory=lambda: defaults.EIGHT_ZEROES
+    )
     # list of 8 integers, 1 for each MSB setting for each patch midi preset
-    ID_PATCH_MIDI_PC_BANK_MSB: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
+    ID_PATCH_MIDI_PC_BANK_MSB: list = field(
+        default_factory=lambda: defaults.EIGHT_ZEROES
+    )
     # list of 8 integers, 1 for each PC setting for each patch midi preset
     ID_PATCH_MIDI_PC: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
     # list of 8 integers, 1 for each CTL1 cc setting for each patch midi preset
     ID_PATCH_MIDI_CTL1_CC: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
     # list of 8 integers, 1 for each CTL1 cc value for each patch midi preset
-    ID_PATCH_MIDI_CTL1_CC_VAL: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
+    ID_PATCH_MIDI_CTL1_CC_VAL: list = field(
+        default_factory=lambda: defaults.EIGHT_ZEROES
+    )
     # list of 8 integers, 1 for each CTL1 cc setting for each patch midi preset
     ID_PATCH_MIDI_CTL2_CC: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
     # list of 8 integers, 1 for each CTL1 cc value for each patch midi preset
-    ID_PATCH_MIDI_CTL2_CC_VAL: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
+    ID_PATCH_MIDI_CTL2_CC_VAL: list = field(
+        default_factory=lambda: defaults.EIGHT_ZEROES
+    )
     # list of 16 integers, for each ctl func definition
     ID_PATCH_CTL_FUNC: list = field(
-        default_factory=lambda: [1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+        default_factory=lambda: [
+            1,
+            2,
+            3,
+            4,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+        ]
     )
     # list of 16 integers, for each ctl min value (0 or 1)
     ID_PATCH_CTL_MIN: list = field(default_factory=lambda: defaults.SIXTEEN_ZEROES)
@@ -181,32 +351,56 @@ class Patch:
     ID_PATCH_ASSIGN_TARGET: list = field(default_factory=lambda: defaults.TWELVE_ZEROES)
     # list of 12 integers, for the midi channel of each cc assign.
     # TODO: find the actual default for this
-    ID_PATCH_ASSIGN_TARGET_CC_CH: list = field(default_factory=lambda: defaults.TWELVE_ZEROES)
+    ID_PATCH_ASSIGN_TARGET_CC_CH: list = field(
+        default_factory=lambda: defaults.TWELVE_ZEROES
+    )
     # list of 12 integers, for the midi message number of each cc assign.
     # TODO: find the actual default for this
-    ID_PATCH_ASSIGN_TARGET_CC_NO: list = field(default_factory=lambda: defaults.TWELVE_ZEROES)
+    ID_PATCH_ASSIGN_TARGET_CC_NO: list = field(
+        default_factory=lambda: defaults.TWELVE_ZEROES
+    )
     # list of 12 integers, for the min value of each assign.
     # TODO: find the actual default for this
-    ID_PATCH_ASSIGN_TARGET_MIN: list = field(default_factory=lambda: defaults.TWELVE_ZEROES)
+    ID_PATCH_ASSIGN_TARGET_MIN: list = field(
+        default_factory=lambda: defaults.TWELVE_ZEROES
+    )
     # list of 12 integers, for the max value of each assign.
     # TODO: find the actual default for this
-    ID_PATCH_ASSIGN_TARGET_MAX: list = field(default_factory=lambda: defaults.TWELVE_ZEROES)
+    ID_PATCH_ASSIGN_TARGET_MAX: list = field(
+        default_factory=lambda: defaults.TWELVE_ZEROES
+    )
     # list of 12 integers, for act low range (this should always be 0)
-    ID_PATCH_ASSIGN_ACT_RANGE_LO: list = field(default_factory=lambda: defaults.TWELVE_ZEROES)
+    ID_PATCH_ASSIGN_ACT_RANGE_LO: list = field(
+        default_factory=lambda: defaults.TWELVE_ZEROES
+    )
     # list of 12 integers, for act low range (this should always be 127)
-    ID_PATCH_ASSIGN_ACT_RANGE_HI: list = field(default_factory=lambda: defaults.TWELVE_127S)
+    ID_PATCH_ASSIGN_ACT_RANGE_HI: list = field(
+        default_factory=lambda: defaults.TWELVE_127S
+    )
     # list of 12 integers, for internal pedal trigger value
-    ID_PATCH_ASSIGN_INT_PEDAL_TRIGGER: list = field(default_factory=lambda: defaults.TWELVE_ZEROES)
+    ID_PATCH_ASSIGN_INT_PEDAL_TRIGGER: list = field(
+        default_factory=lambda: defaults.TWELVE_ZEROES
+    )
     # list of 12 integers, for internal pedal trigger cc value
-    ID_PATCH_ASSIGN_INT_PEDAL_TRIGGER_CC: list = field(default_factory=lambda: defaults.TWELVE_80S)
+    ID_PATCH_ASSIGN_INT_PEDAL_TRIGGER_CC: list = field(
+        default_factory=lambda: defaults.TWELVE_80S
+    )
     # list of 12 integers, for internal pedal time value
-    ID_PATCH_ASSIGN_INT_PEDAL_TIME: list = field(default_factory=lambda: defaults.TWELVE_30S)
+    ID_PATCH_ASSIGN_INT_PEDAL_TIME: list = field(
+        default_factory=lambda: defaults.TWELVE_30S
+    )
     # list of 12 integers, for internal pedal curve value
-    ID_PATCH_ASSIGN_INT_PEDAL_CURVE: list = field(default_factory=lambda: defaults.TWELVE_ZEROES)
+    ID_PATCH_ASSIGN_INT_PEDAL_CURVE: list = field(
+        default_factory=lambda: defaults.TWELVE_ZEROES
+    )
     # list of 12 integers, for internal wave pedal rate
-    ID_PATCH_ASSIGN_WAVE_PEDAL_RATE: list = field(default_factory=lambda: defaults.TWELVE_SEVENS)
+    ID_PATCH_ASSIGN_WAVE_PEDAL_RATE: list = field(
+        default_factory=lambda: defaults.TWELVE_SEVENS
+    )
     # list of 12 integers, for internal wave pedal rate
-    ID_PATCH_ASSIGN_WAVE_PEDAL_FORM: list = field(default_factory=lambda: defaults.TWELVE_TWOS)
+    ID_PATCH_ASSIGN_WAVE_PEDAL_FORM: list = field(
+        default_factory=lambda: defaults.TWELVE_TWOS
+    )
     # 0: system, 1: off
     ID_PATCH_MIDI_CLOCK_OUT: int = 0
     # list of 8 integers: 0: auto, 1: manual
@@ -220,38 +414,40 @@ class Patch:
             "is_enabled": self.ID_PATCH_ASSIGN_SW,
             "min": self.ID_PATCH_ASSIGN_TARGET_MIN,
             "max": self.ID_PATCH_ASSIGN_TARGET_MAX,
-            **params
+            **params,
         }
         return {
             "assign_number": number,
-            "source": mappings.PATCH_ASSIGN_SOURCE_ORDER[self.ID_PATCH_ASSIGN_SOURCE[index]],
-            "target": mappings.PATCH_ASSIGN_TARGET_ORDER[self.ID_PATCH_ASSIGN_TARGET[index]],
+            "source": mappings.PATCH_ASSIGN_SOURCE_ORDER[
+                self.ID_PATCH_ASSIGN_SOURCE[index]
+            ],
+            "target": mappings.PATCH_ASSIGN_TARGET_ORDER[
+                self.ID_PATCH_ASSIGN_TARGET[index]
+            ],
             "mode": mappings.PATCH_ASSIGN_MODE_ORDER[self.ID_PATCH_ASSIGN_MODE[index]],
-            **{k: v[index] for (k, v) in assign_map.items()}
+            **{k: v[index] for (k, v) in assign_map.items()},
         }
 
     def _get_params_for_assign_source(self, source: int):
         global_params = {
             "ActL": self.ID_PATCH_ASSIGN_ACT_RANGE_LO,
-            "ActH": self.ID_PATCH_ASSIGN_ACT_RANGE_HI
+            "ActH": self.ID_PATCH_ASSIGN_ACT_RANGE_HI,
         }
         params_map = {
             mappings.PATCH_ASSIGN_SOURCE_ORDER.index("INT"): {
                 "trigger": self.ID_PATCH_ASSIGN_INT_PEDAL_TRIGGER,
                 "time": self.ID_PATCH_ASSIGN_INT_PEDAL_TIME,
-                "curve": self.ID_PATCH_ASSIGN_INT_PEDAL_CURVE
+                "curve": self.ID_PATCH_ASSIGN_INT_PEDAL_CURVE,
             },
             mappings.PATCH_ASSIGN_SOURCE_ORDER.index("WAV"): {
                 "rate": self.ID_PATCH_ASSIGN_WAVE_PEDAL_RATE,
-                "form": self.ID_PATCH_ASSIGN_WAVE_PEDAL_FORM
+                "form": self.ID_PATCH_ASSIGN_WAVE_PEDAL_FORM,
             },
             mappings.PATCH_ASSIGN_SOURCE_ORDER.index("CC"): {
                 "cc#": self.ID_PATCH_ASSIGN_INT_PEDAL_TRIGGER_CC
-            }
+            },
         }
-        return {
-            **global_params, **params_map.get(source, {})
-        }
+        return {**global_params, **params_map.get(source, {})}
 
     @staticmethod
     def _pick(old, new):

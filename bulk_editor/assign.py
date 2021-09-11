@@ -3,23 +3,25 @@ from dataclasses import asdict
 from . import data_models, defaults, errors, mappings
 
 
-def set_global_assign_default(assign_number,
-                              current_state,
-                              global_defaults,
-                              source,
-                              mode,
-                              target,
-                              params,
-                              initial=False,
-                              force=False):
+def set_global_assign_default(
+    assign_number,
+    current_state,
+    global_defaults,
+    source,
+    mode,
+    target,
+    params,
+    initial=False,
+    force=False,
+):
     """
-        * Load currently used global defaults mask from global default file
-        * Apply changes to default mask (and validate that this doesn't overwrite existing defaults)
-        * Load patches from backup file + parse raw patches to create masks,
-          either from the factory default or base patch.
-        * Apply the updated default mask to the factory default patch, to create a complete patch
-        * Apply each patch mask to this complete patch in order to add back any individual patch customizations
-        * Return list of updated patches, and the newly updated global default mask.
+    * Load currently used global defaults mask from global default file
+    * Apply changes to default mask (and validate that this doesn't overwrite existing defaults)
+    * Load patches from backup file + parse raw patches to create masks,
+      either from the factory default or base patch.
+    * Apply the updated default mask to the factory default patch, to create a complete patch
+    * Apply each patch mask to this complete patch in order to add back any individual patch customizations
+    * Return list of updated patches, and the newly updated global default mask.
     """
     # Apply current global defaults to base patch to create the default mask
     current_global_defaults_mask = data_models.Patch(**global_defaults)
@@ -27,7 +29,9 @@ def set_global_assign_default(assign_number,
     current_assign_state = current_global_defaults_mask.get_assign(assign_number)
     default_assign_state = data_models.DEFAULT_PATCH.get_assign(assign_number)
     if current_assign_state != default_assign_state and not force:
-        raise errors.OverridesDefault(f"Assign {assign_number} already has a default set.")
+        raise errors.OverridesDefault(
+            f"Assign {assign_number} already has a default set."
+        )
     # update global defaults
     updated_defaults = current_global_defaults_mask.update(
         build_assign_mask(assign_number, source, mode, target, params)
@@ -66,8 +70,13 @@ def build_assign_mask(assign_number, source, mode, target, params):
         ID_PATCH_ASSIGN_SOURCE=create_input_array(index, source, "source", "assign"),
         ID_PATCH_ASSIGN_TARGET=create_input_array(index, target, "target", "assign"),
         ID_PATCH_ASSIGN_MODE=create_input_array(index, mode, "mode", "assign"),
-        ID_PATCH_ASSIGN_SW=create_input_array(index, 1, "integer", "assign"),  # turn on patch assign
+        ID_PATCH_ASSIGN_SW=create_input_array(
+            index, 1, "integer", "assign"
+        ),  # turn on patch assign
         # NOTE: This assumes that _all_ params entries will _always_ be integers only!
-        **{k: create_input_array(index, v, "integer", "assign") for (k, v) in params.items()},
-        **non_assign_params
+        **{
+            k: create_input_array(index, v, "integer", "assign")
+            for (k, v) in params.items()
+        },
+        **non_assign_params,
     )

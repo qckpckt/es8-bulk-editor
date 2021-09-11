@@ -14,7 +14,7 @@ def text_to_ord(text: str):
         padded = text[:padding]
     else:
         # ...or stick spaces on the end until it's 16 characters.
-        padded = text + (' ' * padding)
+        padded = text + (" " * padding)
 
     return [ord(i) for i in padded]
 

@@ -4,7 +4,10 @@ import json
 import os
 
 from .assign import set_global_assign_default
+from .loggers import init_logging
 from . import mappings
+
+init_logging(log_file="bulk_editor.log")
 
 BACKUP_FILE = "test_1.bel"
 OUTPUT_FILE = "test_output.bel"
@@ -13,7 +16,10 @@ DEFAULTS_FILE = "global_defaults.json"
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
-    "-a", "--assign_number", type=int, choices=range(1, 13),
+    "-a",
+    "--assign_number",
+    type=int,
+    choices=range(1, 13),
 )
 parser.add_argument(
     "-s", "--source", type=str, choices=mappings.PATCH_ASSIGN_SOURCE_ORDER
@@ -24,12 +30,8 @@ parser.add_argument(
 parser.add_argument(
     "-t", "--target", type=str, choices=mappings.PATCH_ASSIGN_TARGET_ORDER
 )
-parser.add_argument(
-    "-p", "--params", type=str, default="noop"
-)
-parser.add_argument(
-    "-f", "--force", action="store_true", default=False
-)
+parser.add_argument("-p", "--params", type=str, default="noop")
+parser.add_argument("-f", "--force", action="store_true", default=False)
 
 args = parser.parse_args()
 
@@ -55,7 +57,8 @@ updated_patches, new_global_defaults = set_global_assign_default(
     target=args.target,
     params=params,
     force=args.force,
-    initial=initial)
+    initial=initial,
+)
 
 backup_file["patch"] = [asdict(patch) for patch in updated_patches]
 
