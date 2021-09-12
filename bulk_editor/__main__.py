@@ -48,7 +48,9 @@ with open(BACKUP_FILE, "r") as infile:
 
 patch_list = PatchList(patches=backup_file["patch"])
 
-updated_patches, new_global_defaults = actions.VALID_ACTIONS[args.action](patch_list, args)
+updated_patches, new_global_defaults = actions.VALID_ACTIONS[args.action](
+    patch_list, args
+)
 
 backup_file["patch"] = [asdict(patch) for patch in updated_patches]
 
