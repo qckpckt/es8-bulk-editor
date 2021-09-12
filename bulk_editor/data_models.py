@@ -48,6 +48,9 @@ class PatchList:
     patches: list
     global_defaults_name: str = GLOBAL_DEFAULTS_FILE
     global_defaults_backup: str = "{GLOBAL_DEFAULTS_FILE}_{date}"
+    # NOTE - The states attribute might be a bit of a code smell. It is comprised of a list with mixed data types.
+    # Index[0] is a Patch instance, and everything else is a mask (dictionary), so that the masks can be reduced
+    # onto the patch. Not sure if this is a bad pattern or not.
     states: list = field(default_factory=lambda: [get_global_defaults_from_file()])
     _patches: list = field(init=False, repr=False)
 
@@ -75,7 +78,11 @@ class PatchList:
 
     @property
     def latest_default_state(self):
-        """Collapse self.states down to a single Patch instance representing the latest default state."""
+        """Collapse self.states down to a single Patch instance representing the latest default state.
+        TODO - Maybe make this a LRU cache so we aren't reducing every time this thing is accessed?
+               Could probably key the cache on the length of `self.state`. If the length isnt in the cache,
+               recalculate latest_default_state otherwise return the cached value.
+        """
         return reduce(lambda state, mask: state.update(mask), self.states)
 
     def get_patch(self, bank: int, patch: int):
@@ -111,9 +118,8 @@ class PatchList:
             self._update_states(new_default_state)
 
         if to_file:
+            # TODO - Not sure if I want to have file operations inside this class.
             now = datetime.now()
-            # Update the current defaults plus save a backup copy of this new state.
-            # TODO - also write out the previous default state? Not sure if this is necessary.
             backup_file = (
                 f"{self.global_defaults_backup.format(date=now.toisoformat())}.json"
             )
@@ -174,7 +180,9 @@ class PatchList:
     def update_assign(
         self, assign_number: int, source: str, mode: str, target: str, params: dict
     ):
-        """update self.latest_default_state's assign number assign_number"""
+        """update self.latest_default_state's assign number assign_number
+        TODO - lots of args. Maybe there is a better way to pass the argparse arguments around.
+        """
         index = assign_number - 1
         non_assign_params = {}
         if source in mappings.ES8_FOOTSWITCHES:
