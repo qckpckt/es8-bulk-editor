@@ -4,34 +4,17 @@ import json
 
 from .data_models import PatchList
 from .loggers import init_logging
-from . import mappings
+from . import mappings, actions
 
 init_logging(log_file="bulk_editor.log")
 
 BACKUP_FILE = "test_1.bel"
 OUTPUT_FILE = "test_output.bel"
 DEFAULTS_FILE = "global_defaults.json"
-VALID_ACTIONS = {
-    "set_assign": lambda patch_list, args: set_assign(patch_list, args),
-    "set_default_patch": lambda patch_list, args: set_default_patch(patch_list, args),
-}
-
-
-def set_assign(patch_list, args):
-    required_args = ["assign_number", "source", "mode", "target", "params"]
-    payload = {k: getattr(args, k) for k in required_args}
-    return patch_list.update_assign(**payload)
-
-
-def set_default_patch(patch_list, args):
-    bank, patch = [int(i) for i in getattr("coords", args).split(":")]
-    patch_list.set_as_default(bank, patch)
-    return patch_list.apply_default()
-
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("action", type=str, choices=VALID_ACTIONS.keys())
+parser.add_argument("action", type=str, choices=actions.VALID_ACTIONS.keys())
 
 parser.add_argument(
     "-a",
@@ -65,7 +48,7 @@ with open(BACKUP_FILE, "r") as infile:
 
 patch_list = PatchList(patches=backup_file["patch"])
 
-updated_patches, new_global_defaults = VALID_ACTIONS[args.action](patch_list, args)
+updated_patches, new_global_defaults = actions.VALID_ACTIONS[args.action](patch_list, args)
 
 backup_file["patch"] = [asdict(patch) for patch in updated_patches]
 
