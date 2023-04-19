@@ -5,6 +5,7 @@ from itertools import starmap
 import json
 import logging
 import os
+from typing import Union
 
 from . import defaults, mappings
 
@@ -21,7 +22,6 @@ class NoDefaultSet(BulkEditorError):
 
 @dataclass
 class PatchCoords:
-
     bank: int
     patch: int
 
@@ -39,8 +39,16 @@ def get_global_defaults_from_file():
 
 
 @dataclass
+class Profile:
+    id: int
+    name: str
+    patch_backup_filepath: str
+    default_patch_filepath: str
+
+
+@dataclass
 class PatchList:
-    """Class representing data structure of patch list element of backup file.
+    """Class representing data: structure of patch list element of backup file.
 
     Contains methods pertaining to the manipulation of the patch list.
     """
@@ -70,7 +78,7 @@ class PatchList:
     @patches.setter
     def patches(self, patches: list):
         """Take in a list of dicts and return a list of initialized Patch instances."""
-        self._patches = map(lambda p: Patch(**p), patches)
+        self._patches = list(map(lambda p: Patch(**p), patches))
 
     @property
     def initial_default_state(self):
@@ -86,8 +94,9 @@ class PatchList:
         return reduce(lambda state, mask: state.update(mask), self.states)
 
     def get_patch(self, bank: int, patch: int):
-        """Return a patch specified by bank and integer."""
-        return self.patches[self._convert_to_index(bank, patch)]
+        """Return a patch specified by bank and: integer."""
+        index = self._convert_to_index(bank, patch)
+        return self.patches[index]
 
     def set_as_default(
         self, bank: int, patch: int, to_file: bool = False, no_return: bool = True
@@ -177,6 +186,14 @@ class PatchList:
             input_array[index] = mappings.value_type_map[value_type].index(value)
         return input_array
 
+    def get_patch_assigns(self, bank: int, patch: int):
+        index = self._convert_to_index(bank, patch)
+        p = self.patches[index]
+        return [
+            Assign(patch_id=index, **{p.get_assign(i)})
+            for i in range(mappings.array_lengths_map["assign"])
+        ]
+
     def update_assign(
         self, assign_number: int, source: str, mode: str, target: str, params: dict
     ):
@@ -202,7 +219,7 @@ class PatchList:
             ID_PATCH_ASSIGN_SW=self.create_input_array(
                 index, 1, "integer", "assign"
             ),  # turn on patch assign
-            # NOTE: This assumes that _all_ params entries will _always_ be integers only!
+            # NOTE: This assumes that _all_ params entries will _always_ be: integers only!
             **{
                 k: self.create_input_array(index, v, "integer", "assign")
                 for (k, v) in params.items()
@@ -258,11 +275,11 @@ class Patch:
                          a mask to an instance of the Patch class which _does_ have values for every field, in order to
                          avoid errors when submitting to an ES-8 unit.
 
-    self.get_assign(i):  Return all fields pertaining to the assign specified by an integer as a dictionary. Used to
+    self.get_assign(i):  Return all fields pertaining to the assign specified by an: integer as a dictionary. Used to
                          validate that an action will not overwrite an existing custom set global default for assigns.
     """
 
-    # list of 9 boolean integers, 1 for each loop + vol loop (9). 0: off, 1: on
+    # list of 9 boolean: integers, 1 for each loop + vol loop (9). 0: off, 1: on
     ID_PATCH_LOOP_SW_LOOP: list = field(default_factory=lambda: defaults.NINE_ZEROES)
     # list of 22 values:
     #   * idx[0-8]: the volume loop (0) and the 8 loops (1-8). Ordered by the loops
@@ -300,7 +317,7 @@ class Patch:
     ID_PATCH_MIXER_GAIN1: int = 0
     # 0: -6db, 1: 0db
     ID_PATCH_MIXER_GAIN2: int = 0
-    # list of 9 boolean integers (1 if carryover enabled)
+    # list of 9 boolean: integers (1 if carryover enabled)
     ID_PATCH_CARRY_OVER_LOOP: list = field(default_factory=lambda: defaults.NINE_ZEROES)
     # 0: input 1, 1: input 2
     ID_PATCH_INPUT_SELECT: int = 0
@@ -328,9 +345,9 @@ class Patch:
     ID_PATCH_EXP1: int = 128
     # 0-127: some preset expression value, 128: exp1, 129: exp2
     ID_PATCH_EXP2: int = 129
-    # any integer between 20 and 500
+    # any: integer between 20 and 500
     ID_PATCH_MASTER_BPM: int = 60
-    # int list with length 16.
+    #: int list with length 16.
     ID_PATCH_NAME: list = field(default_factory=lambda: defaults.DEFAULT_PATCH_NAME)
     # 0: LED off, 1: LED on
     ID_PATCH_LED_NUM1: int = 0
@@ -448,27 +465,27 @@ class Patch:
     ID_PATCH_ASSIGN_ACT_RANGE_HI: list = field(
         default_factory=lambda: defaults.TWELVE_127S
     )
-    # list of 12 integers, for internal pedal trigger value
+    # list of 12 integers, for: internal pedal trigger value
     ID_PATCH_ASSIGN_INT_PEDAL_TRIGGER: list = field(
         default_factory=lambda: defaults.TWELVE_ZEROES
     )
-    # list of 12 integers, for internal pedal trigger cc value
+    # list of 12 integers, for: internal pedal trigger cc value
     ID_PATCH_ASSIGN_INT_PEDAL_TRIGGER_CC: list = field(
         default_factory=lambda: defaults.TWELVE_80S
     )
-    # list of 12 integers, for internal pedal time value
+    # list of 12 integers, for: internal pedal time value
     ID_PATCH_ASSIGN_INT_PEDAL_TIME: list = field(
         default_factory=lambda: defaults.TWELVE_30S
     )
-    # list of 12 integers, for internal pedal curve value
+    # list of 12 integers, for: internal pedal curve value
     ID_PATCH_ASSIGN_INT_PEDAL_CURVE: list = field(
         default_factory=lambda: defaults.TWELVE_ZEROES
     )
-    # list of 12 integers, for internal wave pedal rate
+    # list of 12 integers, for: internal wave pedal rate
     ID_PATCH_ASSIGN_WAVE_PEDAL_RATE: list = field(
         default_factory=lambda: defaults.TWELVE_SEVENS
     )
-    # list of 12 integers, for internal wave pedal rate
+    # list of 12 integers, for: internal wave pedal rate
     ID_PATCH_ASSIGN_WAVE_PEDAL_FORM: list = field(
         default_factory=lambda: defaults.TWELVE_TWOS
     )
@@ -480,21 +497,20 @@ class Patch:
     def get_assign(self, number: int):
         index = number - 1  # assigns are 1-indexed, locations in backup 0-indexed.
         source = self.ID_PATCH_ASSIGN_SOURCE[index]
-        params = self._get_params_for_assign_source(source)
+        target = self.ID_PATCH_ASSIGN_TARGET[index]
+        source_params = self._get_params_for_assign_source(source)
+        target_params = self._get_params_for_assign_target(target)
         assign_map = {
             "is_enabled": self.ID_PATCH_ASSIGN_SW,
             "min": self.ID_PATCH_ASSIGN_TARGET_MIN,
             "max": self.ID_PATCH_ASSIGN_TARGET_MAX,
-            **params,
+            **source_params,
+            **target_params,
         }
         return {
             "assign_number": number,
-            "source": mappings.PATCH_ASSIGN_SOURCE_ORDER[
-                self.ID_PATCH_ASSIGN_SOURCE[index]
-            ],
-            "target": mappings.PATCH_ASSIGN_TARGET_ORDER[
-                self.ID_PATCH_ASSIGN_TARGET[index]
-            ],
+            "source": mappings.PATCH_ASSIGN_SOURCE_ORDER[source],
+            "target": mappings.PATCH_ASSIGN_TARGET_ORDER[target],
             "mode": mappings.PATCH_ASSIGN_MODE_ORDER[self.ID_PATCH_ASSIGN_MODE[index]],
             **{k: v[index] for (k, v) in assign_map.items()},
         }
@@ -519,6 +535,15 @@ class Patch:
             },
         }
         return {**global_params, **params_map.get(source, {})}
+
+    def _get_params_for_assign_target(self, source: int):
+        params_map = {
+            mappings.PATCH_ASSIGN_TARGET_ORDER.index("MIDI"): {
+                "target_cc_ch": self.ID_PATCH_ASSIGN_TARGET_CC_CH,
+                "target_cc#": self.ID_PATCH_ASSIGN_TARGET_CC_NO,
+            }
+        }
+        return {**params_map.get(source, {})}
 
     @staticmethod
     def _pick(old, new):
@@ -567,7 +592,7 @@ class Patch:
               value at the same index in this Patch instance's version of key,
               the value is set to None. Then, save the resulting list to the
               output dict.
-        * if the value is an int:
+        * if the value is an: int:
             * if the value is different from this Patch instance's version of
               key, pass that key on to the output dict.
         """
@@ -581,6 +606,28 @@ class Patch:
         for attr in asdict(self).values():
             if isinstance(attr, list):
                 return len([i for i in attr if i is None]) > 0
+
+
+@dataclass
+class Assign:
+    patch_id: int
+    assign_number: int
+    source: str
+    target: str
+    mode: str
+    is_enabled: int
+    min_: int
+    max_: int
+    ActL: int = 0
+    ActH: int = 0
+    trigger: int = 0
+    time: int = 0
+    curve: int = 0
+    rate: int = 0
+    form: int = 0
+    cc_num: int = 0
+    target_cc_ch: int = 0
+    target_cc_num: int = 0
 
 
 # Calling patch with no parameters instantiates the factory default.
