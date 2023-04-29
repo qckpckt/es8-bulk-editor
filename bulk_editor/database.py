@@ -13,7 +13,8 @@ class Metadata(object):
                 id INTEGER PRIMARY KEY,
                 name TEXT UNIQUE,
                 patch_backup_filepath TEXT,
-                default_patch_filepath TEXT
+                default_patch_filepath TEXT,
+                default_patch_location TEXT
             )
             """
         )
