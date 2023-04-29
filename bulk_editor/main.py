@@ -86,13 +86,12 @@ def init(
     if result := ctx.obj.metadata.get_metadata_by_name("default"):
         if not update:
             print(
-                ":warning: [bold yellow]Editor already intialized "
-                "with default profile:[/]\n\n",
+                "\n\n[bold]Editor already intialized with default profile:[/]\n\n",
             )
             print(str(pretty.pretty_repr(dict(result))))
             print(
                 "\n\nTo update the patch backup filepath, pass the "
-                "[bold cyan1]--update[/] option."
+                "[bold cyan1]--update[/] option.\n\n"
             )
             raise typer.Exit()
 
@@ -100,8 +99,8 @@ def init(
             db_method = partial(ctx.obj.metadata.update, result["id"])
 
     print(
-        "[bold cyan1]:control_knobs:  Welcome to the BOSS ES-8 bulk editor! "
-        ":control_knobs:[/]"
+        "\n\n[bold cyan1]:control_knobs:  Welcome to the BOSS ES-8 bulk editor! "
+        ":control_knobs:[/]\n\n"
     )
 
     while True:
