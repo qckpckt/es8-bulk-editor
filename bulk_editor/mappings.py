@@ -166,7 +166,7 @@ def ord_to_text(ord_list: List[int]) -> str:
     return "".join([chr(i) for i in ord_list[:end_of_string_idx]])
 
 
-def patch_to_index(bank: int, patch: int):
+def patch_to_index(bank: int, patch: int) -> int:
     """
     Convert bank and patch to list index.
     The ES-8 has 800 patches arranged in 100 banks of 8.
@@ -175,7 +175,7 @@ def patch_to_index(bank: int, patch: int):
     return bank * 8 + (patch - 1)
 
 
-def index_to_patch(index: int):
+def index_to_patch(index: int) -> Tuple[int, int]:
     """
     Convert list index back into a bank and patch.
     """

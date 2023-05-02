@@ -149,7 +149,8 @@ def init(
                 total=1,
                 description=(
                     f"[blue]Validating [bold green_yellow]{bank}[/]:"
-                    f"[spring_green1]{patch}[/] - [light_cyan1]'{p.patch_name}[/]'...[/]"
+                    f"[spring_green1]{patch}[/] - "
+                    "[light_cyan1]'{p.patch_name}[/]'...[/]"
                 ),
             )
             time.sleep(0.01)
