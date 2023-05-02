@@ -2,6 +2,7 @@ from functools import wraps, partial
 import json
 from pathlib import Path
 from sqlite3 import IntegrityError
+import time
 from typing import Dict
 
 import typer
@@ -17,6 +18,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 # from .screens import editor
 from . import data_models as dm
 from . import database as db
+from . import mappings
 from .context import DotDict
 
 app = typer.Typer()
@@ -64,7 +66,12 @@ def get_model(backup_filepath: str) -> dm.PatchList:
 def default_patch_filepath() -> str:
     script_path = Path(__file__).resolve()
     app_dir = script_path.parent
-    return str(app_dir / "defaults" / "global_defaults.json")
+    return str(app_dir / "templates" / "global_defaults.json")
+
+
+def start_editor(screen: str, ctx: typer.Context):
+    """Start editor in screen `screen`. Pass context object to screen."""
+    pass
 
 
 @app.command()
@@ -113,29 +120,51 @@ def init(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        transient=True,
     ) as progress:
-        add_default = progress.add_task("[red]Creating Default Entry...", total=1)
+        add_default = progress.add_task("[red]Creating Default Entry...[/]", total=15)
 
         try:
             db_method(payload)
         except IntegrityError as e:
             raise ProfileError(e, payload=payload, ctx=ctx) from e
-        progress.update(add_default, total=1)
+        for i in range(15):
+            if i == 14:
+                progress.update(
+                    add_default,
+                    total=i + 1,
+                    description="[red]Creating Default Entry...[/][green] Done![/]",
+                )
+            progress.update(add_default, total=i + 1)
+            time.sleep(0.1)
 
         load_patches = progress.add_task(
-            "[blue]Loading patches from default file...", total=1
+            "[blue]Loading patches from default file...", total=800
         )
         ctx.obj.patch_list = get_model(payload["patch_backup_filepath"])
-        progress.update(load_patches, total=1)
+        for i, p in enumerate(ctx.obj.patch_list.patches):
+            bank, patch = mappings.index_to_patch(i)
+            progress.update(
+                load_patches,
+                total=1,
+                description=(
+                    f"[blue]Validating [bold green_yellow]{bank}[/]:"
+                    f"[spring_green1]{patch}[/] - [light_cyan1]'{p.patch_name}[/]'...[/]"
+                ),
+            )
+            time.sleep(0.01)
 
     print(
-        ":sparkles: [bold]Default profile set with patch backup path "
-        f"[green]{backup_filepath}[/] :sparkles:"
+        "\n\n:sparkles: [bold]Default profile set with patch backup path "
+        f"[green]{backup_filepath}[/] :sparkles:\n\n"
     )
+
+    if Confirm.ask("Configure ES-8 preferences?"):
+        start_editor("prefs", ctx)
 
 
 @app.command()
-def add_default(
+def add_template(
     ctx: typer.Context,
     name: str = typer.Option("", help="Name of new profile"),
     default_patch_location: str = typer.Option(

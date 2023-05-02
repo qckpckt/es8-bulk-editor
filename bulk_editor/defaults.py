@@ -1,24 +1,12 @@
 """Defaults for patch instance and accompanying helper functions.
 """
 
-MAX_PATCH_NAME_LENGTH = 16
+from .mappings import text_to_ord
 
 
 def default_values(n, multiple) -> list:
     """Create a list of n of length multiple"""
     return [n] * multiple
-
-
-def text_to_ord(text: str):
-    padding = MAX_PATCH_NAME_LENGTH - len(text)
-    if padding < 0:
-        # cut the end off the title if it's longer than 16...
-        padded = text[:padding]
-    else:
-        # ...or stick spaces on the end until it's 16 characters.
-        padded = text + (" " * padding)
-
-    return [ord(i) for i in padded]
 
 
 DEFAULT_PATCH_NAME = text_to_ord("BOSS ES-8")

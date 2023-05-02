@@ -1,5 +1,8 @@
 """Mappings for various components of patch file.
 """
+from typing import List, Tuple
+
+MAX_PATCH_NAME_LENGTH = 16
 
 CTL_FUNC_ORDER = [
     "OFF",
@@ -138,3 +141,45 @@ value_type_map = {
     "mode": PATCH_ASSIGN_MODE_ORDER,
     "ctl_func": CTL_FUNC_ORDER,
 }
+
+
+def text_to_ord(text: str) -> List[int]:
+    padding = MAX_PATCH_NAME_LENGTH - len(text)
+    if padding < 0:
+        # cut the end off the title if it's longer than 16...
+        padded = text[:padding]
+    else:
+        # ...or stick spaces on the end until it's 16 characters.
+        padded = text + (" " * padding)
+
+    return [ord(i) for i in padded]
+
+
+def ord_to_text(ord_list: List[int]) -> str:
+    reversed = ord_list[::-1]
+    not_whitespace = 0
+    for i, char in enumerate(reversed):
+        if char != 32:
+            not_whitespace += i
+            break
+    end_of_string_idx = MAX_PATCH_NAME_LENGTH - not_whitespace
+    return "".join([chr(i) for i in ord_list[:end_of_string_idx]])
+
+
+def patch_to_index(bank: int, patch: int):
+    """
+    Convert bank and patch to list index.
+    The ES-8 has 800 patches arranged in 100 banks of 8.
+    The banks go from 0-99, and each patch in a bank is numbered 1-8.
+    """
+    return bank * 8 + (patch - 1)
+
+
+def index_to_patch(index: int):
+    """
+    Convert list index back into a bank and patch.
+    """
+    bank = index // 8
+    patch = index % 8 + 1
+
+    return bank, patch

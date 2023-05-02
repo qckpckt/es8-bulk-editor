@@ -494,6 +494,11 @@ class Patch:
     # list of 8 integers: 0: auto, 1: manual
     ID_PATCH_MIDI_TRANSMIT: list = field(default_factory=lambda: defaults.EIGHT_ZEROES)
 
+    @property
+    def patch_name(self):
+        """Convert the raw list of ints into the string representation of the patch name"""
+        return mappings.ord_to_text(self.ID_PATCH_NAME)
+
     def get_assign(self, number: int):
         index = number - 1  # assigns are 1-indexed, locations in backup 0-indexed.
         source = self.ID_PATCH_ASSIGN_SOURCE[index]
