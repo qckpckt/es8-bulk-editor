@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from functools import wraps, partial
 import json
 from pathlib import Path
@@ -5,14 +6,15 @@ from sqlite3 import IntegrityError
 import time
 from typing import Dict
 
+from tinydb import Query
 import typer
 from rich import print, pretty
 from rich.console import Console
 from rich.prompt import Prompt, Confirm
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, BarColumn, TaskProgressColumn, TextColumn
 
 # from asciimatics.screen import Screen
-# from asciimatics.exceptions import ResizeScreenError
+# from asciimatics.exceptions import R esizeScreenError
 
 
 # from .screens import editor
@@ -63,6 +65,13 @@ def get_model(backup_filepath: str) -> dm.PatchList:
     return dm.PatchList(backup["patch"])
 
 
+def default_local_storage() -> str:
+    home_dir = Path.home()
+    local_storage = home_dir / ".es8"
+    local_storage.mkdir(parents=True, exist_ok=True)
+    return str(local_storage)
+
+
 def default_patch_filepath() -> str:
     script_path = Path(__file__).resolve()
     app_dir = script_path.parent
@@ -75,7 +84,6 @@ def start_editor(screen: str, ctx: typer.Context):
 
 
 @app.command()
-@handle_profile_error
 def init(
     ctx: typer.Context,
     update: bool = typer.Option(False, help="update the global patch backup filepath"),
@@ -83,18 +91,25 @@ def init(
     """Initialize ES8 editor with the default profile."""
 
     payload = {
+        "type": "metadata",
         "name": "default",
         "default_patch_filepath": default_patch_filepath(),
+        "patch_backup_filepath": None,
+        "is_ingested": False,
     }
 
-    db_method = ctx.obj.metadata.add
+    conf_table = ctx.obj.db.table("conf")
+    patch_table = ctx.obj.db.table("patch")
+    conf = ctx.obj.orm
 
-    if result := ctx.obj.metadata.get_metadata_by_name("default"):
+    db_method = conf_table.insert
+
+    if metadata := conf_table.get(conf.type == "metadata"):
         if not update:
             print(
                 "\n\n[bold]Editor already intialized with default profile:[/]\n\n",
             )
-            print(str(pretty.pretty_repr(dict(result))))
+            print(str(pretty.pretty_repr(metadata)))
             print(
                 "\n\nTo update the patch backup filepath, pass the "
                 "[bold cyan1]--update[/] option.\n\n"
@@ -102,7 +117,16 @@ def init(
             raise typer.Exit()
 
         else:
-            db_method = partial(ctx.obj.metadata.update, result["id"])
+            if metadata["is_ingested"]:
+                proceed = Confirm.ask(
+                    "[bold red]Supplying a new backup path means the patch table will "
+                    "be nuked. Proceed?[/]"
+                )
+                if not proceed:
+                    raise typer.Exit()
+                print(":bomb: [bold orange]Erasing patch table![/] :bomb:")
+                ctx.obj.db.drop_table("patch")
+            db_method = partial(conf_table.update, doc_ids=[metadata.doc_id])
 
     print(
         "\n\n[bold cyan1]:control_knobs:  Welcome to the BOSS ES-8 bulk editor! "
@@ -118,42 +142,47 @@ def init(
         print("[prompt.invalid]File not found. Check for typos?")
 
     with Progress(
-        SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        expand=True,
         transient=True,
     ) as progress:
         add_default = progress.add_task("[red]Creating Default Entry...[/]", total=15)
 
-        try:
-            db_method(payload)
-        except IntegrityError as e:
-            raise ProfileError(e, payload=payload, ctx=ctx) from e
+        db_method(payload)
+
         for i in range(15):
             if i == 14:
                 progress.update(
                     add_default,
-                    total=i + 1,
+                    advance=1,
                     description="[red]Creating Default Entry...[/][green] Done![/]",
                 )
-            progress.update(add_default, total=i + 1)
-            time.sleep(0.1)
+            progress.update(add_default, advance=1)
+            time.sleep(0.05)
 
         load_patches = progress.add_task(
             "[blue]Loading patches from default file...", total=800
         )
         ctx.obj.patch_list = get_model(payload["patch_backup_filepath"])
+
         for i, p in enumerate(ctx.obj.patch_list.patches):
             bank, patch = mappings.index_to_patch(i)
+            p_id = patch_table.insert(asdict(p))
             progress.update(
                 load_patches,
-                total=1,
+                advance=1,
                 description=(
-                    f"[blue]Validating [bold green_yellow]{bank}[/]:"
+                    f"[blue]inserted [bold green_yellow]{bank}[/]:"
                     f"[spring_green1]{patch}[/] - "
-                    "[light_cyan1]'{p.patch_name}[/]'...[/]"
+                    f"[light_cyan1]'{p.patch_name}[/]' "
+                    f"with id [sping_green1 bold]{p_id}...[/]"
                 ),
             )
-            time.sleep(0.01)
+
+        metadata_doc_id = conf_table.get(conf.type == "metadata").doc_id
+        conf_table.update({"is_ingested": True}, doc_ids=[metadata_doc_id])
 
     print(
         "\n\n:sparkles: [bold]Default profile set with patch backup path "
@@ -250,8 +279,11 @@ def add_template(
 
 @app.callback()
 def main(ctx: typer.Context):
+    path = default_local_storage()
+
     ctx.obj = DotDict()
-    ctx.obj.metadata = db.Metadata()
+    ctx.obj.db = db.init_db(path)
+    ctx.obj.orm = Query()
 
 
 if __name__ == "__main__":
