@@ -513,7 +513,9 @@ class Patch:
 
     @property
     def patch_name(self):
-        """Convert the raw list of ints into the string representation of the patch name"""
+        """
+        Convert the raw list of ints into the string representation of the patch name
+        """
         return mappings.ord_to_text(self.ID_PATCH_NAME)
 
     def get_assign(self, number: int):

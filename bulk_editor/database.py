@@ -1,5 +1,4 @@
-import json
-from tinydb import TinyDB, Query
+from tinydb import TinyDB
 
 
 def init_db(
