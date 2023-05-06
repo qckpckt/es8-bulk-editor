@@ -5,7 +5,6 @@ from itertools import starmap
 import json
 import logging
 import os
-from typing import Union
 
 from . import defaults, mappings
 
@@ -56,9 +55,10 @@ class PatchList:
     patches: list
     global_defaults_name: str = GLOBAL_DEFAULTS_FILE
     global_defaults_backup: str = "{GLOBAL_DEFAULTS_FILE}_{date}"
-    # NOTE - The states attribute might be a bit of a code smell. It is comprised of a list with mixed data types.
-    # Index[0] is a Patch instance, and everything else is a mask (dictionary), so that the masks can be reduced
-    # onto the patch. Not sure if this is a bad pattern or not.
+    # NOTE - The states attribute might be a bit of a code smell. It is comprised of a
+    #        list with mixed data types. Index[0] is a Patch instance, and everything
+    #        else is a mask (dictionary), so that the masks can be reduced
+    #        onto the patch. Not sure if this is a bad pattern or not.
     states: list = field(default_factory=lambda: [get_global_defaults_from_file()])
     _patches: list = field(init=False, repr=False)
 
@@ -86,9 +86,12 @@ class PatchList:
 
     @property
     def latest_default_state(self):
-        """Collapse self.states down to a single Patch instance representing the latest default state.
-        TODO - Maybe make this a LRU cache so we aren't reducing every time this thing is accessed?
-               Could probably key the cache on the length of `self.state`. If the length isnt in the cache,
+        """Collapse self.states down to a single Patch instance representing the latest
+        default state.
+        TODO - Maybe make this a LRU cache so we aren't reducing every time this thing
+               is accessed?
+               Could probably key the cache on the length of `self.state`. If the length
+               isnt in the cache,
                recalculate latest_default_state otherwise return the cached value.
         """
         return reduce(lambda state, mask: state.update(mask), self.states)
@@ -103,14 +106,16 @@ class PatchList:
     ):
         """Specify a patch as the default patch from which all others are based.
 
-        NOTE - if this is not in fact the default patch, IE there are patches that are in fact the factory
-               default instead, this method will produce unexpected results!
+        NOTE - if this is not in fact the default patch, IE there are patches that are
+               in fact the factory default instead, this method will produce unexpected
+               results!
 
         :param bank: bank number for default patch
         :type bank: int
         :param patch: patch number for default patch
         :type patch: int
-        :param to_file: boolean indicating whether to write out patch to file (default True)
+        :param to_file: boolean indicating whether to write out patch to file
+                        (default True)
         :type to_file: bool
         :return: Patch instance representing default patch
         :rtype: Patch
@@ -122,7 +127,8 @@ class PatchList:
             return self.latest_default_state
         else:
             logging.info(
-                f"Patch {bank}:{patch} is not the currently specified default patch. Updating state."
+                f"Patch {bank}:{patch} is not the currently specified default patch. "
+                "Updating state."
             )
             self._update_states(new_default_state)
 
@@ -156,12 +162,13 @@ class PatchList:
 
         Raise error if no default patch is set and factory is False (default).
 
-        Assumes that self.latest_default_state is *not* the currently applied default patch.
+        Assumes that self.latest_default_state is *not* the currently applied default
+        patch.
 
         :param factory:   Set to True to apply the factory default to all patches.
         :type factory:    bool
-        :param overwrite: Set to True to overwrite the current state of each patch with the default patch.
-                          NOTE - destructive operation!
+        :param overwrite: Set to True to overwrite the current state of each patch with
+                          the default patch. NOTE - destructive operation!
         :type overwrite:  bool
         """
 
@@ -198,7 +205,8 @@ class PatchList:
         self, assign_number: int, source: str, mode: str, target: str, params: dict
     ):
         """update self.latest_default_state's assign number assign_number
-        TODO - lots of args. Maybe there is a better way to pass the argparse arguments around.
+        TODO - lots of args. Maybe there is a better way to pass the argparse arguments
+               around.
         """
         index = assign_number - 1
         non_assign_params = {}
@@ -219,7 +227,7 @@ class PatchList:
             ID_PATCH_ASSIGN_SW=self.create_input_array(
                 index, 1, "integer", "assign"
             ),  # turn on patch assign
-            # NOTE: This assumes that _all_ params entries will _always_ be: integers only!
+            # NOTE: This assumes that _all_ params entries will _always_ be: integers!
             **{
                 k: self.create_input_array(index, v, "integer", "assign")
                 for (k, v) in params.items()
@@ -231,7 +239,8 @@ class PatchList:
         return self.patches, self.latest_default_state
 
     def _apply(self):
-        """Apply self.latest_default_state to patches, using self.initial_default_state to create masks."""
+        """Apply self.latest_default_state to patches, using self.initial_default_state
+        to create masks."""
         # create patch masks
         patch_masks = map(
             lambda patch: self.initial_default_state.mask(asdict(patch)), self.patches
@@ -252,31 +261,39 @@ class PatchList:
 
 @dataclass
 class Patch:
-    """Dataclass that bundles together all of the individual fields and related methods for a patch.
+    """Dataclass that bundles together all of the individual fields and related methods\
+    for a patch.
 
     **CORE CONCEPTS**
 
-    Mask:   A mask in this context is a dictionary representation of a patch which only contains fields
-            with values that are different from some base patch (either a global default or the factory default,
-            which is represented by calling Patch() with no kwargs.) Most of the fields in a Patch are arrays.
-            In this instance, the array will only contain values at indices that differ from the default. All
-            other entries will be `None`. This methodology allows for layers of changes to be applied while
-            preserving the unique aspects of each patch.
+    Mask:   A mask in this context is a dictionary representation of a patch which only
+            contains fields with values that are different from some base patch (either
+            a global default or the factory default, which is represented by calling
+            Patch() with no kwargs.) Most of the fields in a Patch are arrays. In this
+            instance, the array will only contain values at indices that differ from the
+            default. All other entries will be `None`. This methodology allows for
+            layers of changes to be applied while preserving the unique aspects of each
+            patch.
 
     **KEY METHODS**
 
     self.mask(patch):    Create a mask from a dictionary representation of a patch.
 
-    self.update(mask):   Return a new Patch instance which contains the merged result of the supplied mask with
-                         the state from the patch instance on which this method was called. Importantly, this method
-                         can be used to apply masks to one another! If a mask is used to instantiate an instance of
-                         Patch, then you can still call update with another mask, iteratively building up changes.
-                         Before these changes are resolved to a new patch list though, it is necessary to apply them as
-                         a mask to an instance of the Patch class which _does_ have values for every field, in order to
-                         avoid errors when submitting to an ES-8 unit.
+    self.update(mask):   Return a new Patch instance which contains the merged result of
+                         the supplied mask with the state from the patch instance on
+                         which this method was called. Importantly, this method can be
+                         used to apply masks to one another! If a mask is used to
+                         instantiate an instance of Patch, then you can still call
+                         update with another mask, iteratively building up changes.
+                         Before these changes are resolved to a new patch list though,
+                         it is necessary to apply them as a mask to an instance of the
+                         Patch class which _does_ have values for every field, in order
+                         to avoid errors when submitting to an ES-8 unit.
 
-    self.get_assign(i):  Return all fields pertaining to the assign specified by an: integer as a dictionary. Used to
-                         validate that an action will not overwrite an existing custom set global default for assigns.
+    self.get_assign(i):  Return all fields pertaining to the assign specified by an:
+                         integer as a dictionary. Used to validate that an action will
+                         not overwrite an existing custom set global default for
+                         assigns.
     """
 
     # list of 9 boolean: integers, 1 for each loop + vol loop (9). 0: off, 1: on
@@ -576,11 +593,13 @@ class Patch:
         """Return a new Patch instance, with mask applied.
 
         The input mask dictionary will only contain keys/values that are different
-        from either the factory default patch or the last state of the global_defaults.json.
+        from either the factory default patch or the last state of the
+        global_defaults.json.
 
-        If the input mask value is a list, all Nones in this list are replaced with values from
-        this Patch instance, and then the key/value pair are applied over the top of the field
-        values from this Patch instance to create a new instance in an 'upsert' action.
+        If the input mask value is a list, all Nones in this list are replaced with
+        values from this Patch instance, and then the key/value pair are applied over
+        the top of the field values from this Patch instance to create a new instance
+        in an 'upsert' action.
 
         """
         return Patch(**{**asdict(self), **self._mutate("_pick", mask)})
@@ -635,5 +654,61 @@ class Assign:
     target_cc_num: int = 0
 
 
+@dataclass
+class LoopPrefs:
+    type: str = "loop_prefs"
+    loop_1: str = ""
+    loop_2: str = ""
+    loop_3: str = ""
+    loop_4: str = ""
+    loop_5: str = ""
+    loop_6: str = ""
+    loop_7: str = ""
+    loop_8: str = ""
+    loop_v: str = ""
+
+
+@dataclass
+class MidiPrefs:
+    type: str = "midi_prefs"
+    midi_1: str = ""
+    midi_2: str = ""
+    midi_3: str = ""
+    midi_4: str = ""
+    midi_5: str = ""
+    midi_6: str = ""
+    midi_7: str = ""
+    midi_8: str = ""
+    midi_9: str = ""
+    midi_10: str = ""
+    midi_11: str = ""
+    midi_12: str = ""
+    midi_13: str = ""
+    midi_14: str = ""
+    midi_15: str = ""
+    midi_16: str = ""
+    midi_1_pmidi: str = ""
+    midi_2_pmidi: str = ""
+    midi_3_pmidi: str = ""
+    midi_4_pmidi: str = ""
+    midi_5_pmidi: str = ""
+    midi_6_pmidi: str = ""
+    midi_7_pmidi: str = ""
+    midi_8_pmidi: str = ""
+    midi_9_pmidi: str = ""
+    midi_10_pmidi: str = ""
+    midi_11_pmidi: str = ""
+    midi_12_pmidi: str = ""
+    midi_13_pmidi: str = ""
+    midi_14_pmidi: str = ""
+    midi_15_pmidi: str = ""
+    midi_16_pmidi: str = ""
+
+
 # Calling patch with no parameters instantiates the factory default.
 DEFAULT_PATCH = Patch()
+MODEL_MAP = {
+    "loop_prefs": LoopPrefs,
+    "midi_prefs": MidiPrefs,
+    "assign": Assign,
+}
