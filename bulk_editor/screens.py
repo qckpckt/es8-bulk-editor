@@ -1,5 +1,5 @@
 from dataclasses import asdict
-from typing import Union, Dict, Any
+from typing import Union, Dict, Any, Optional
 
 from asciimatics.widgets import (
     Frame,
@@ -10,6 +10,7 @@ from asciimatics.widgets import (
     ListBox,
     Divider,
     Widget,
+    DropdownList,
 )
 from asciimatics.scene import Scene
 from asciimatics.screen import Screen
@@ -20,128 +21,332 @@ from typer import Context
 from . import data_models as models
 
 
+USER_PREFERENCES = {
+    "Loop Preferences": "loop_prefs",
+    "Midi Preferences": "midi_prefs",
+}
+
+
+def _next_scene(scene_name: str):
+    raise NextScene(scene_name)
+
+
 def _filter_data(data: Dict[str, Any], screen: str) -> Dict[str, Any]:
     """For a given data dict and screen:
-        - find the associated data model
-        - filter the data dict to remove keys not in the model
-        - return the union of both dicts (to include any default fields from the model)
+    - find the associated data model
+    - filter the data dict to remove keys not in the model
+    - return the union of both dicts (to include any default fields from the model)
     """
     model = asdict(models.MODEL_MAP[screen]())
     filtered = {k: v for k, v in data.items() if k in model}
     return model | filtered
 
 
-class UserPrefs(Frame):
-    def __init__(self, screen: Screen, ctx):
+class ListView(Frame):
+    parent_scene = None
+    child_scene = None
+    option_name = None
+
+    def __init__(
+        self, screen: Screen, ctx: Context, title: str, view: ListBox, *args, **kwargs
+    ):
         super().__init__(
             screen,
-            screen.height,
-            screen.width,
-            can_scroll=False,
-            title="Edit User Preferences",
+            screen.height * 2 // 3,
+            screen.width * 2 // 3,
+            hover_focus=True,
+            title=title,
             reduce_cpu=True,
+            *args,
+            **kwargs,
         )
-        self._list_options = {"_loop_prefs": 0, "_midi_prefs": 1}
-        self._list_view = ListBox(
+        self._list_view = view
+        self.set_theme("bright")
+        self.base_layout = Layout([100], fill_frame=True)
+        self.add_layout(self.base_layout)
+        self.base_layout.add_widget(self._list_view)
+        self.base_layout.add_widget(Divider())
+        self.button_layout = Layout([1, 1, 1, 1])
+        self.add_layout(self.button_layout)
+        self._edit_button = Button("Edit", self._edit)
+        self._done_button = Button("Done", self._done)
+        self.button_layout.add_widget(self._edit_button, 1)
+        self.button_layout.add_widget(self._done_button, 3)
+        self.fix()
+        self._on_pick()
+
+    def _on_pick(self):
+        raise NotImplementedError
+
+    def _edit(self):
+        raise NotImplementedError
+
+    def _done(self):
+        if self.parent_scene is None:
+            raise StopApplication("User pressed quit")
+        else:
+            _next_scene(self.parent_scene)
+
+
+class UserPrefs(ListView):
+    option_name = "user_prefs"
+
+    def __init__(
+        self,
+        screen: Screen,
+        ctx: Context,
+    ):
+        view = ListBox(
             Widget.FILL_FRAME,
-            list(self._list_options.items()),
-            name="preference_options",
+            [(b, a) for (a, b) in enumerate(USER_PREFERENCES)],
+            name="pref_choice",
             add_scroll_bar=True,
             on_change=self._on_pick,
             on_select=self._edit,
         )
-        self.table = ctx.obj.db.table("user_prefs")
-        self.prefs = ctx.obj.orm
-        self.set_theme("bright")
-        self._edit_button = Button("Edit", self._edit)
-        layout = Layout([100], fill_frame=True)
-        self.add_layout(layout)
-        layout.add_widget(self._list_view)
-        layout.add_widget(Divider())
-        layout2 = Layout([1, 1, 1, 1])
-        self.add_layout(layout2)
-        layout2.add_widget(self._edit_button, 2)
-        layout2.add_widget(Button("Done", self._done), 3)
-        self.fix()
-        self._on_pick()
+        super().__init__(
+            screen,
+            ctx,
+            title="Edit User Preferences",
+            view=view,
+            can_scroll=False,
+        )
+        self.pref_options = list(USER_PREFERENCES.keys())
 
     def _on_pick(self):
         self._edit_button.disabled = self._list_view.value is None
 
     def _edit(self):
         self.save()
-        selected = {v: k for k, v in self._list_options.items()}[
-            self.data["preference_options"]
-        ]
-        preference_option = getattr(self, selected)
-        preference_option()
-
-
-    @staticmethod
-    def _loop_prefs():
-        raise NextScene("loop_prefs")
-
-    @staticmethod
-    def _midi_prefs():
-        raise NextScene("loop_prefs")
+        choice = self.pref_options[self.data["pref_choice"]]
+        selected = USER_PREFERENCES[choice]
+        _next_scene(selected)
 
     @staticmethod
     def _done():
         raise StopApplication("User pressed quit")
 
 
-class LoopPrefs(Frame):
-    def __init__(self, screen: Screen, ctx):
+class UserPrefsOption(Frame):
+    option_name = None
+    parent_scene = None
+    fields = {}
+
+    def __init__(
+        self,
+        screen: Screen,
+        ctx: Context,
+        can_scroll: bool,
+        title: str,
+        widget_label: str,
+    ):
         super().__init__(
             screen,
             screen.height,
             screen.width,
-            can_scroll=False,
-            title="Edit Loop Preferences",
+            can_scroll=can_scroll,
+            title=title,
             reduce_cpu=True,
         )
         self._table = ctx.obj.db.table("user_prefs")
         self._prefs = ctx.obj.orm
-        self._curr_state = self._table.get(self._prefs.type == "loop_prefs")
-        if self._curr_state is not None:
-            self._doc_id = self._curr_state.doc_id
-            self.data = self._curr_state
-
-        fields = {
-            "Loop 1": "loop_1",
-            "Loop 2": "loop_2",
-            "Loop 3": "loop_3",
-            "Loop 4": "loop_4",
-            "Loop 5": "loop_5",
-            "Loop 6": "loop_6",
-            "Loop 7": "loop_7",
-            "Loop 8": "loop_8",
-            "Volume Loop": "loop_v",
-        }
 
         self.set_theme("bright")
-        layout = Layout([1, 1], fill_frame=True)
-        self.add_layout(layout)
-
-        layout.add_widget(Label("Name your loops"), 0)
+        self.base_layout = Layout([1, 1], fill_frame=True)
+        self.add_layout(self.base_layout)
+        self.button_layout = Layout([1, 1, 1, 1])
+        self.add_layout(self.button_layout)
+        self.base_layout.add_widget(Label(widget_label), 0)
         help = Label("Press tab to navigate.", name="help")
         help.custom_colour = "disabled"
-        layout.add_widget(help, 0)
-        for label, name in fields.items():
+        self.base_layout.add_widget(help, 0)
+        for label, name in self.fields.items():
             setattr(self, name, Text(label, name))
-            layout.add_widget(getattr(self, name), 0)
+            self.base_layout.add_widget(getattr(self, name), 0)
+        self.button_layout.add_widget(Button("OK", self._ok), 0)
+        self.button_layout.add_widget(Button("Cancel", self._cancel), 3)
 
-        layout2 = Layout([1, 1, 1, 1])
-        self.add_layout(layout2)
-        layout2.add_widget(Button("OK", self._ok), 0)
-        layout2.add_widget(Button("Cancel", self._cancel), 3)
+    @staticmethod
+    def _cancel():
+        raise NextScene("user_prefs")
+
+
+class LoopPrefs(UserPrefsOption):
+    option_name = "loop_prefs"
+    parent_scene = "user_prefs"
+    fields = {
+        "Loop 1": "loop_1",
+        "Loop 2": "loop_2",
+        "Loop 3": "loop_3",
+        "Loop 4": "loop_4",
+        "Loop 5": "loop_5",
+        "Loop 6": "loop_6",
+        "Loop 7": "loop_7",
+        "Loop 8": "loop_8",
+        "Volume Loop": "loop_v",
+    }
+
+    def __init__(self, screen: Screen, ctx: Context):
+        super().__init__(
+            screen,
+            ctx=ctx,
+            can_scroll=False,
+            title="Edit Loop Preferences",
+            widget_label="Name your loops",
+        )
+
         self.fix()
+
+    def _ok(self):
+        self.save()
+        payload = _filter_data(self.data, self.option_name)
+        if hasattr(self, "_doc_id"):
+            self._table.upsert(Document(payload, doc_id=self._doc_id))
+        else:
+            self._table.upsert(payload, self._prefs.type == self.option_name)
+        _next_scene(self.parent_scene)
 
     def reset(self):
         # Do standard reset to clear out form, then populate with new data.
         super().reset()
-        last_state = self._table.get(self._prefs.type == "loop_prefs")
-        self.data = last_state if last_state is not None else {}
+        if last_state := self._table.get(self._prefs.type == self.option_name):
+            self.data = last_state
+            self._doc_id = last_state.doc_id
+
+        for key in self.data:
+            if hasattr(self, key):
+                getattr(self, key).value = self.data[key]
+
+
+class MidiPrefs(ListView):
+    option_name = "midi_prefs"
+    parent_scene = "user_prefs"
+    child_scene = "midi_pref"
+
+    def __init__(self, screen: Screen, ctx: Context):
+        self._table = ctx.obj.db.table("user_prefs")
+        self._prefs = ctx.obj.orm
+        view = ListBox(
+            Widget.FILL_FRAME,
+            self._fetch_midi_prefs(),
+            name="midi_choice",
+            add_scroll_bar=True,
+            on_change=self._on_pick,
+            on_select=self._edit,
+        )
+        super().__init__(
+            screen,
+            ctx=ctx,
+            view=view,
+            on_load=self._reload_list,
+            can_scroll=False,
+            title="Edit Midi Preferences",
+        )
+        self._add_button = Button("Add", self._add)
+        self._delete_button = Button("Delete", self._delete)
+        self.button_layout.add_widget(self._add_button, 0)
+        self.button_layout.add_widget(self._delete_button, 2)
+        self.fix()
+        self._on_pick()
+
+    def _fetch_midi_prefs(self):
+        return [
+            (pref["loop_num"], pref.doc_id)
+            for pref in self._table.search(self._prefs.type == "midi_pref")
+        ]
+
+    def _reload_list(self, new_value=None):
+        self._list_view.options = self._fetch_midi_prefs()
+        self._list_view.value = new_value
+
+    @property
+    def _midi_context_doc_id(self):
+        if context := self._table.get(self._prefs.type == "midi_prefs"):
+            return context.doc_id
+        else:
+            payload = _filter_data({"current_doc_id": None}, self.option_name)
+            result = self._table.insert(payload)
+            return result
+
+    def _set_midi_context(self, value: Optional[int]):
+        payload = _filter_data({"current_doc_id": value}, self.option_name)
+        self._table.upsert(Document(payload, doc_id=self._midi_context_doc_id))
+
+    def _on_pick(self):
+        self._edit_button.disabled = self._list_view.value is None
+
+    def _add(self):
+        self._set_midi_context(None)
+        _next_scene(self.child_scene)
+
+    def _edit(self):
+        self.save()
+        self._set_midi_context(self.data["midi_choice"])
+        _next_scene(self.child_scene)
+
+    def _delete(self):
+        self.save()
+        self._table.remove(doc_ids=[self._midi_context_doc_id])
+        self._reload_list()
+
+
+class MidiPref(UserPrefsOption):
+    option_name = "midi_pref"
+    parent_scene = "midi_prefs"
+    fields = {
+        "Patch Midi #:": "pmidi_num",
+        "Midi Channel:": "midi_ch",
+    }
+
+    def __init__(self, screen: Screen, ctx: Context):
+        super().__init__(
+            screen,
+            ctx=ctx,
+            can_scroll=False,
+            title="Edit Midi Preference",
+            widget_label="Provide midi config details",
+        )
+        self._pedal_options = self._fetch_pedal_options()
+        self._loop_num = DropdownList(
+            options=[(option, i) for (i, option) in enumerate(self._pedal_options)],
+            label="Loop",
+            name="_loop_num",
+        )
+        self.base_layout.add_widget(self._loop_num)
+        self.fix()
+
+    def _fetch_pedal_options(self):
+        loop_prefs = self._table.get(self._prefs.type == "loop_prefs")
+        pedal_options = []
+        for loop, p in loop_prefs.items():
+            if "loop" in loop:
+                if ">>" in p:
+                    pedal_options.extend(
+                        [": ".join([loop, i]) for i in p.split(" >> ")]
+                    )
+                else:
+                    pedal_options.append(": ".join([loop, p]))
+        pedal_options.append("Other")
+        return pedal_options
+
+    @property
+    def _midi_context_doc_id(self):
+        if context := self._table.get(self._prefs.type == "midi_prefs"):
+            return context.doc_id
+        else:
+            payload = _filter_data({"current_doc_id": None}, self.option_name)
+            result = self._table.insert(payload, self._prefs.type == "midi_prefs")
+            return result
+
+    def _get_current_pref_id(self):
+        midi_context = self._table.get(doc_id=self._midi_context_doc_id)
+        return midi_context["current_doc_id"]
+
+    def reset(self):
+        super().reset()
+        if pref_id := self._get_current_pref_id():
+            self.data = self._table.get(doc_id=pref_id)
+            self.data["_loop_num"] = self._pedal_options.index(self.data["loop_num"])
 
         for key in self.data:
             if hasattr(self, key):
@@ -149,16 +354,13 @@ class LoopPrefs(Frame):
 
     def _ok(self):
         self.save()
-        payload = _filter_data(self.data, "loop_prefs")
-        if hasattr(self, "_doc_id"):
-            self._table.upsert(Document(payload, doc_id=self._doc_id))
+        self.data["loop_num"] = self._pedal_options[self.data["_loop_num"]]
+        payload = _filter_data(self.data, self.option_name)
+        if pref_id := self._get_current_pref_id():
+            self._table.upsert(Document(payload, doc_id=pref_id))
         else:
-            self._table.upsert(payload, self._prefs.type == "loop_prefs")
-        raise NextScene("user_prefs")
-
-    @staticmethod
-    def _cancel():
-        raise NextScene("user_prefs")
+            self._table.insert(payload)
+        _next_scene(self.parent_scene)
 
 
 def editor(
@@ -170,6 +372,8 @@ def editor(
     scenes = {
         "user_prefs": Scene([UserPrefs(screen, ctx)], -1, name="user_prefs"),
         "loop_prefs": Scene([LoopPrefs(screen, ctx)], -1, name="loop_prefs"),
+        "midi_prefs": Scene([MidiPrefs(screen, ctx)], -1, name="midi_prefs"),
+        "midi_pref": Scene([MidiPref(screen, ctx)], -1, name="midi_pref"),
     }
     if start_scene is not None:
         scene = scenes[start_scene]

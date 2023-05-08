@@ -5,6 +5,7 @@ from itertools import starmap
 import json
 import logging
 import os
+from typing import Optional
 
 from . import defaults, mappings
 
@@ -673,38 +674,15 @@ class LoopPrefs:
 @dataclass
 class MidiPrefs:
     type: str = "midi_prefs"
-    midi_1: str = ""
-    midi_2: str = ""
-    midi_3: str = ""
-    midi_4: str = ""
-    midi_5: str = ""
-    midi_6: str = ""
-    midi_7: str = ""
-    midi_8: str = ""
-    midi_9: str = ""
-    midi_10: str = ""
-    midi_11: str = ""
-    midi_12: str = ""
-    midi_13: str = ""
-    midi_14: str = ""
-    midi_15: str = ""
-    midi_16: str = ""
-    midi_1_pmidi: str = ""
-    midi_2_pmidi: str = ""
-    midi_3_pmidi: str = ""
-    midi_4_pmidi: str = ""
-    midi_5_pmidi: str = ""
-    midi_6_pmidi: str = ""
-    midi_7_pmidi: str = ""
-    midi_8_pmidi: str = ""
-    midi_9_pmidi: str = ""
-    midi_10_pmidi: str = ""
-    midi_11_pmidi: str = ""
-    midi_12_pmidi: str = ""
-    midi_13_pmidi: str = ""
-    midi_14_pmidi: str = ""
-    midi_15_pmidi: str = ""
-    midi_16_pmidi: str = ""
+    current_doc_id: Optional[int] = None
+
+
+@dataclass
+class MidiPref:
+    type: str = "midi_pref"
+    loop_num: str = ""
+    pmidi_num: str = ""
+    midi_ch: str = ""
 
 
 # Calling patch with no parameters instantiates the factory default.
@@ -712,5 +690,6 @@ DEFAULT_PATCH = Patch()
 MODEL_MAP = {
     "loop_prefs": LoopPrefs,
     "midi_prefs": MidiPrefs,
+    "midi_pref": MidiPref,
     "assign": Assign,
 }
