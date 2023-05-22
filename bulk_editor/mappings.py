@@ -183,3 +183,11 @@ def index_to_patch(index: int) -> Tuple[int, int]:
     patch = index % 8 + 1
 
     return bank, patch
+
+
+def index_to_name(index: int, mapping: List[str]) -> str:
+    return mapping[index]
+
+
+def name_to_index(name: str, mapping: List[str]) -> int:
+    return mapping.index(name)

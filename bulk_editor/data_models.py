@@ -669,6 +669,7 @@ class LoopPrefs:
     loop_7: str = ""
     loop_8: str = ""
     loop_v: str = ""
+    other: str = ""
 
 
 @dataclass

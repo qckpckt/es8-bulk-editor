@@ -18,8 +18,9 @@ from asciimatics.exceptions import StopApplication, NextScene
 from tinydb.table import Document
 from typer import Context
 
-from . import data_models as models
-
+from . import mappings
+from . import database as db
+from .context import AppContext
 
 USER_PREFERENCES = {
     "Loop Preferences": "loop_prefs",
@@ -31,24 +32,19 @@ def _next_scene(scene_name: str):
     raise NextScene(scene_name)
 
 
-def _filter_data(data: Dict[str, Any], screen: str) -> Dict[str, Any]:
-    """For a given data dict and screen:
-    - find the associated data model
-    - filter the data dict to remove keys not in the model
-    - return the union of both dicts (to include any default fields from the model)
-    """
-    model = asdict(models.MODEL_MAP[screen]())
-    filtered = {k: v for k, v in data.items() if k in model}
-    return model | filtered
-
-
 class ListView(Frame):
     parent_scene = None
     child_scene = None
     option_name = None
 
     def __init__(
-        self, screen: Screen, ctx: Context, title: str, view: ListBox, *args, **kwargs
+        self,
+        screen: Screen,
+        ctx: AppContext,
+        title: str,
+        view: ListBox,
+        *args,
+        **kwargs,
     ):
         super().__init__(
             screen,
@@ -94,7 +90,7 @@ class UserPrefs(ListView):
     def __init__(
         self,
         screen: Screen,
-        ctx: Context,
+        ctx: AppContext,
     ):
         view = ListBox(
             Widget.FILL_FRAME,
@@ -135,7 +131,7 @@ class UserPrefsOption(Frame):
     def __init__(
         self,
         screen: Screen,
-        ctx: Context,
+        ctx: AppContext,
         can_scroll: bool,
         title: str,
         widget_label: str,
@@ -148,8 +144,6 @@ class UserPrefsOption(Frame):
             title=title,
             reduce_cpu=True,
         )
-        self._table = ctx.obj.db.table("user_prefs")
-        self._prefs = ctx.obj.orm
 
         self.set_theme("bright")
         self.base_layout = Layout([1, 1], fill_frame=True)
@@ -184,9 +178,10 @@ class LoopPrefs(UserPrefsOption):
         "Loop 7": "loop_7",
         "Loop 8": "loop_8",
         "Volume Loop": "loop_v",
+        "Other": "other",
     }
 
-    def __init__(self, screen: Screen, ctx: Context):
+    def __init__(self, screen: Screen, ctx: AppContext):
         super().__init__(
             screen,
             ctx=ctx,
@@ -194,24 +189,20 @@ class LoopPrefs(UserPrefsOption):
             title="Edit Loop Preferences",
             widget_label="Name your loops",
         )
-
+        self._table = ctx.user_prefs
         self.fix()
 
     def _ok(self):
         self.save()
-        payload = _filter_data(self.data, self.option_name)
-        if hasattr(self, "_doc_id"):
-            self._table.upsert(Document(payload, doc_id=self._doc_id))
-        else:
-            self._table.upsert(payload, self._prefs.type == self.option_name)
+        self._table.upsert(payload=self.data, screen=self.option_name)
         _next_scene(self.parent_scene)
 
     def reset(self):
         # Do standard reset to clear out form, then populate with new data.
         super().reset()
-        if last_state := self._table.get(self._prefs.type == self.option_name):
+        if last_state := self._table.get(screen=self.option_name):
             self.data = last_state
-            self._doc_id = last_state.doc_id
+            self._table.current_entry[self.option_name] = last_state.doc_id
 
         for key in self.data:
             if hasattr(self, key):
@@ -223,9 +214,9 @@ class MidiPrefs(ListView):
     parent_scene = "user_prefs"
     child_scene = "midi_pref"
 
-    def __init__(self, screen: Screen, ctx: Context):
-        self._table = ctx.obj.db.table("user_prefs")
-        self._prefs = ctx.obj.orm
+    def __init__(self, screen: Screen, ctx: AppContext):
+        self._table = ctx.user_prefs
+
         view = ListBox(
             Widget.FILL_FRAME,
             self._fetch_midi_prefs(),
@@ -244,6 +235,7 @@ class MidiPrefs(ListView):
         )
         self._add_button = Button("Add", self._add)
         self._delete_button = Button("Delete", self._delete)
+        self._delete_button.disabled = self._table.current_entry is None
         self.button_layout.add_widget(self._add_button, 0)
         self.button_layout.add_widget(self._delete_button, 2)
         self.fix()
@@ -252,41 +244,28 @@ class MidiPrefs(ListView):
     def _fetch_midi_prefs(self):
         return [
             (pref["loop_num"], pref.doc_id)
-            for pref in self._table.search(self._prefs.type == "midi_pref")
+            for pref in self._table.search(screen=self.child_scene)
         ]
 
     def _reload_list(self, new_value=None):
         self._list_view.options = self._fetch_midi_prefs()
         self._list_view.value = new_value
 
-    @property
-    def _midi_context_doc_id(self):
-        if context := self._table.get(self._prefs.type == "midi_prefs"):
-            return context.doc_id
-        else:
-            payload = _filter_data({"current_doc_id": None}, self.option_name)
-            result = self._table.insert(payload)
-            return result
-
-    def _set_midi_context(self, value: Optional[int]):
-        payload = _filter_data({"current_doc_id": value}, self.option_name)
-        self._table.upsert(Document(payload, doc_id=self._midi_context_doc_id))
-
     def _on_pick(self):
         self._edit_button.disabled = self._list_view.value is None
 
     def _add(self):
-        self._set_midi_context(None)
+        self._table.current_entry[self.child_scene] = None
         _next_scene(self.child_scene)
 
     def _edit(self):
         self.save()
-        self._set_midi_context(self.data["midi_choice"])
+        self._table.current_entry[self.child_scene] = self.data["midi_choice"]
         _next_scene(self.child_scene)
 
     def _delete(self):
         self.save()
-        self._table.remove(doc_ids=[self._midi_context_doc_id])
+        self._table.delete(screen=self.child_scene)
         self._reload_list()
 
 
@@ -306,6 +285,7 @@ class MidiPref(UserPrefsOption):
             title="Edit Midi Preference",
             widget_label="Provide midi config details",
         )
+        self._table = ctx.user_prefs
         self._pedal_options = self._fetch_pedal_options()
         self._loop_num = DropdownList(
             options=[(option, i) for (i, option) in enumerate(self._pedal_options)],
@@ -316,37 +296,37 @@ class MidiPref(UserPrefsOption):
         self.fix()
 
     def _fetch_pedal_options(self):
-        loop_prefs = self._table.get(self._prefs.type == "loop_prefs")
+        loop_prefs = self._table.get(screen="loop_prefs")
         pedal_options = []
         for loop, p in loop_prefs.items():
             if "loop" in loop:
+                title = loop.replace("_", " ").capitalize()
                 if ">>" in p:
                     pedal_options.extend(
-                        [": ".join([loop, i]) for i in p.split(" >> ")]
+                        [": ".join([title, i]) for i in p.split(" >> ")]
                     )
                 else:
-                    pedal_options.append(": ".join([loop, p]))
-        pedal_options.append("Other")
+                    pedal_options.append(": ".join([title, p]))
+            if loop == "other" and loop_prefs[loop]:
+                title = loop.capitalize()
+                pedal_options.extend([": ".join([title, i]) for i in p.split(", ")])
         return pedal_options
-
-    @property
-    def _midi_context_doc_id(self):
-        if context := self._table.get(self._prefs.type == "midi_prefs"):
-            return context.doc_id
-        else:
-            payload = _filter_data({"current_doc_id": None}, self.option_name)
-            result = self._table.insert(payload, self._prefs.type == "midi_prefs")
-            return result
-
-    def _get_current_pref_id(self):
-        midi_context = self._table.get(doc_id=self._midi_context_doc_id)
-        return midi_context["current_doc_id"]
 
     def reset(self):
         super().reset()
-        if pref_id := self._get_current_pref_id():
-            self.data = self._table.get(doc_id=pref_id)
-            self.data["_loop_num"] = self._pedal_options.index(self.data["loop_num"])
+        if self._table.current_entry[self.option_name] is not None:
+            self.data = self._table.get(screen=self.option_name)
+            try:
+                self.data["_loop_num"] = mappings.name_to_index(
+                    self.data["loop_num"], self._pedal_options
+                )
+            except ValueError:
+                parts = self.data["loop_num"].split(": ")
+                title = parts[0]
+                converted = ": ".join([title.replace("_", " ").capitalize(), parts[1]])
+                self.data["_loop_num"] = mappings.name_to_index(
+                    converted, self._pedal_options
+                )
 
         for key in self.data:
             if hasattr(self, key):
@@ -354,19 +334,21 @@ class MidiPref(UserPrefsOption):
 
     def _ok(self):
         self.save()
-        self.data["loop_num"] = self._pedal_options[self.data["_loop_num"]]
-        payload = _filter_data(self.data, self.option_name)
-        if pref_id := self._get_current_pref_id():
-            self._table.upsert(Document(payload, doc_id=pref_id))
+        self.data["loop_num"] = mappings.index_to_name(
+            self.data["_loop_num"], self._pedal_options
+        )
+
+        if self._table.current_entry[self.option_name] is not None:
+            self._table.upsert(payload=self.data, screen=self.option_name)
         else:
-            self._table.insert(payload)
+            self._table.insert(payload=self.data, screen=self.option_name)
         _next_scene(self.parent_scene)
 
 
 def editor(
     screen,
     scene: Scene,
-    ctx: Context,
+    ctx: AppContext,
     start_scene: Union[str, None],
 ):
     scenes = {

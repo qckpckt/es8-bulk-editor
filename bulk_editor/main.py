@@ -14,11 +14,12 @@ from rich.progress import Progress, BarColumn, TaskProgressColumn, TextColumn
 from tinydb import Query
 import typer
 
+from . import defaults
 from .screens import editor
 from . import data_models as dm
 from . import database as db
 from . import mappings
-from .context import DotDict
+from .context import AppContext
 
 app = typer.Typer()
 console = Console()
@@ -28,19 +29,6 @@ def get_model(backup_filepath: str) -> dm.PatchList:
     with open(backup_filepath, "r") as infile:
         backup = json.load(infile)
     return dm.PatchList(backup["patch"])
-
-
-def default_local_storage() -> str:
-    home_dir = Path.home()
-    local_storage = home_dir / ".es8"
-    local_storage.mkdir(parents=True, exist_ok=True)
-    return str(local_storage)
-
-
-def default_patch_filepath() -> str:
-    script_path = Path(__file__).resolve()
-    app_dir = script_path.parent
-    return str(app_dir / "templates" / "global_defaults.json")
 
 
 @app.command()
@@ -53,7 +41,7 @@ def init(
     payload = {
         "type": "metadata",
         "name": "default",
-        "default_patch_filepath": default_patch_filepath(),
+        "default_patch_filepath": defaults.patch_filepath(),
         "patch_backup_filepath": None,
         "is_ingested": False,
     }
@@ -157,7 +145,7 @@ def configure(ctx: typer.Context):
     while True:
         try:
             Screen.wrapper(
-                editor, catch_interrupt=True, arguments=[scene, ctx, start_scene]
+                editor, catch_interrupt=True, arguments=[scene, ctx.obj, start_scene]
             )
             break
         except ResizeScreenError:
@@ -166,11 +154,13 @@ def configure(ctx: typer.Context):
 
 @app.callback()
 def main(ctx: typer.Context):
-    path = default_local_storage()
-
-    ctx.obj = DotDict()
-    ctx.obj.db = db.init_db(path)
-    ctx.obj.orm = Query()
+    path = defaults.local_storage()
+    app_context = AppContext(
+        user_prefs=db.Es8Table(
+            db=db.init_db(path), orm=Query(), table_name="user_prefs"
+        )
+    )
+    ctx.obj = app_context
 
 
 if __name__ == "__main__":
