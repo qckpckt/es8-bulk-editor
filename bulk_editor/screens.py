@@ -243,8 +243,14 @@ class MidiPrefs(ListView):
 
     def _fetch_midi_prefs(self):
         return [
-            (pref["loop_num"], pref.doc_id)
-            for pref in self._table.search(screen=self.child_scene)
+            (
+                f"Channel {' ' + pref['midi_ch'] if len(pref['midi_ch']) < 2 else pref['midi_ch']} [{pref['loop_num']}]",
+                pref.doc_id,
+            )
+            for pref in sorted(
+                self._table.search(screen=self.child_scene),
+                key=lambda x: int(x["midi_ch"]),
+            )
         ]
 
     def _reload_list(self, new_value=None):
