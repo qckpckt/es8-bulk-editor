@@ -688,12 +688,18 @@ class PatchCoords:
 
 
 @dataclass
+class Templates:
+    type: str = "templates"
+    current_doc_id: Optional[int] = None
+
+
+@dataclass
 class TemplatePref:
-    type: str = "template_pref"
     source_patch_coords: PatchCoords
-    applies_to: Union[List[PatchCoords], Literal["all"]]
-    name: str = ""
+    applies_to: Union[List[int], List[Literal["all"]]]
     version: int
+    name: str = ""
+    type: str = "template_pref"
 
 
 # Calling patch with no parameters instantiates the factory default.
@@ -703,4 +709,8 @@ MODEL_MAP = {
     "midi_prefs": MidiPrefs,
     "midi_pref": MidiPref,
     "assign": Assign,
+    "templates": Templates,
+    "template_pref": lambda x=dict(
+        source_patch_coords={"bank": 0, "patch": 0}, applies_to=["all"], version=0
+    ): TemplatePref(**x),
 }
