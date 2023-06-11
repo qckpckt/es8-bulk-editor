@@ -16,3 +16,4 @@ class DotDict(dict):
 @dataclass
 class AppContext:
     user_prefs: db.Es8Table
+    templates: db.Es8Table

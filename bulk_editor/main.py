@@ -3,6 +3,7 @@ from functools import partial
 import json
 from pathlib import Path
 import time
+from typing import Optional
 
 from asciimatics.screen import Screen
 from asciimatics.exceptions import ResizeScreenError
@@ -138,10 +139,7 @@ def init(
     )
 
 
-@app.command()
-def configure(ctx: typer.Context):
-    scene = None
-    start_scene = "user_prefs"
+def _launch_ui(ctx: typer.Context, start_scene: str, scene: Optional[str] = None):
     while True:
         try:
             Screen.wrapper(
@@ -152,13 +150,28 @@ def configure(ctx: typer.Context):
             pass
 
 
+@app.command()
+def configure(ctx: typer.Context):
+    scene = None
+    start_scene = "user_prefs"
+    _launch_ui(ctx, start_scene, scene=scene)
+
+
+@app.command()
+def template(ctx: typer.Context):
+    scene = None
+    start_scene = "templates"
+    _launch_ui(ctx, start_scene, scene=scene)
+
+
 @app.callback()
 def main(ctx: typer.Context):
     path = defaults.local_storage()
+    database = db.init_db(path)
+    orm = Query()
     app_context = AppContext(
-        user_prefs=db.Es8Table(
-            db=db.init_db(path), orm=Query(), table_name="user_prefs"
-        )
+        user_prefs=db.Es8Table(db=database, orm=orm, table_name="user_prefs"),
+        templates=db.Es8Table(db=database, orm=orm, table_name="templates"),
     )
     ctx.obj = app_context
 
