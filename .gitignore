@@ -2,3 +2,5 @@ __DS_Store__
 __pycache__
 venv/
 .vscode/
+*.log
+*.db
