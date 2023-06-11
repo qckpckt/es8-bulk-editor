@@ -1,3 +1,4 @@
+from typing import List, Literal, Union
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from functools import reduce
@@ -18,12 +19,6 @@ class BulkEditorError(Exception):
 
 class NoDefaultSet(BulkEditorError):
     pass
-
-
-@dataclass
-class PatchCoords:
-    bank: int
-    patch: int
 
 
 def get_global_defaults_from_file():
@@ -684,6 +679,21 @@ class MidiPref:
     loop_num: str = ""
     pmidi_num: str = ""
     midi_ch: str = ""
+
+
+@dataclass
+class PatchCoords:
+    bank: int
+    patch: int
+
+
+@dataclass
+class TemplatePref:
+    type: str = "template_pref"
+    source_patch_coords: PatchCoords
+    applies_to: Union[List[PatchCoords], Literal["all"]]
+    name: str = ""
+    version: int
 
 
 # Calling patch with no parameters instantiates the factory default.
