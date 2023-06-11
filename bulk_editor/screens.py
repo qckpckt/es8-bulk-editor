@@ -68,8 +68,23 @@ class ListView(Frame):
         self._done_button = Button("Done", self._done)
         self.button_layout.add_widget(self._edit_button, 1)
         self.button_layout.add_widget(self._done_button, 3)
+        self._pref_template = "{option} {idx} [{detail}]"
+        self._sort_key = "type"  # noop unless overridden
+        self._pref_sort_fn = lambda x: x[self._sort_key]
         self.fix()
         self._on_pick()
+
+    def _fetch_prefs(self):
+        pref_list = []
+        for pref in sorted(
+            self._table.search(screen=self.child_scene),
+            key=self._pref_sort_fn,
+        ):
+            pref_list.append(self._build_pref_title(pref), pref.doc_id)
+        return pref_list
+
+    def _build_pref_title(self, pref: dict):
+        raise NotImplementedError
 
     def _on_pick(self):
         raise NotImplementedError
@@ -238,20 +253,29 @@ class MidiPrefs(ListView):
         self._delete_button.disabled = self._table.current_entry is None
         self.button_layout.add_widget(self._add_button, 0)
         self.button_layout.add_widget(self._delete_button, 2)
+        self._pref_sort_key = "midi_ch"
+        self._pref_sort_fn = lambda x: int(x[self._pref_sort_key])
         self.fix()
         self._on_pick()
 
-    def _fetch_midi_prefs(self):
-        return [
-            (
-                f"Channel {' ' + pref['midi_ch'] if len(pref['midi_ch']) < 2 else pref['midi_ch']} [{pref['loop_num']}]",
-                pref.doc_id,
-            )
-            for pref in sorted(
-                self._table.search(screen=self.child_scene),
-                key=lambda x: int(x["midi_ch"]),
-            )
-        ]
+    def _build_pref_title(self, pref: dict):
+        return self._pref_template.format(
+            option="Channel",
+            idx=" " + pref["midi_ch"] if len(pref["midi_ch"]) < 2 else pref["midi_ch"],
+            detail=pref["loop_num"],
+        )
+
+    # def _fetch_midi_prefs(self):
+    #     return [
+    #         (
+    #             f"Channel {' ' + pref['midi_ch'] if len(pref['midi_ch']) < 2 else pref['midi_ch']} [{pref['loop_num']}]",
+    #             pref.doc_id,
+    #         )
+    #         for pref in sorted(
+    #             self._table.search(screen=self.child_scene),
+    #             key=lambda x: int(x["midi_ch"]),
+    #         )
+    #     ]
 
     def _reload_list(self, new_value=None):
         self._list_view.options = self._fetch_midi_prefs()
@@ -351,6 +375,46 @@ class MidiPref(UserPrefsOption):
         _next_scene(self.parent_scene)
 
 
+class Templates(ListView):
+    option_name = "templates"
+    # parent_scene = "user_prefs"
+    child_scene = "template_pref"
+
+    def __init__(self, screen: Screen, ctx: AppContext):
+        self._table = ctx.user_prefs
+
+        view = ListBox(
+            Widget.FILL_FRAME,
+            self._fetch_prefs(),
+            name="template_choice",
+            add_scroll_bar=True,
+            on_change=self._on_pick,
+            on_select=self._edit,
+        )
+        super().__init__(
+            screen,
+            ctx=ctx,
+            view=view,
+            on_load=self._reload_list,
+            can_scroll=False,
+            title="Edit Midi Preferences",
+        )
+        self._add_button = Button("Add", self._add)
+        self._delete_button = Button("Delete", self._delete)
+        self._delete_button.disabled = self._table.current_entry is None
+        self.button_layout.add_widget(self._add_button, 0)
+        self.button_layout.add_widget(self._delete_button, 2)
+        self._pref_sort_key = "name"
+        self.fix()
+        self._on_pick()
+
+    def _build_pref_title(self, pref: dict):
+        """Function used to create title for self._fetch_prefs"""
+        return self._pref_template.format(
+            option="Template", idx=pref["name"], detail=pref["applies_to"]
+        )
+
+
 def editor(
     screen,
     scene: Scene,
@@ -362,6 +426,7 @@ def editor(
         "loop_prefs": Scene([LoopPrefs(screen, ctx)], -1, name="loop_prefs"),
         "midi_prefs": Scene([MidiPrefs(screen, ctx)], -1, name="midi_prefs"),
         "midi_pref": Scene([MidiPref(screen, ctx)], -1, name="midi_pref"),
+        "templates": Scene([Templates(screen, ctx)], -1, name="templates"),
     }
     if start_scene is not None:
         scene = scenes[start_scene]
