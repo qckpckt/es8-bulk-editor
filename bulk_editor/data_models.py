@@ -1,3 +1,4 @@
+from typing import List, Literal, Union
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from functools import reduce
@@ -18,12 +19,6 @@ class BulkEditorError(Exception):
 
 class NoDefaultSet(BulkEditorError):
     pass
-
-
-@dataclass
-class PatchCoords:
-    bank: int
-    patch: int
 
 
 def get_global_defaults_from_file():
@@ -686,6 +681,27 @@ class MidiPref:
     midi_ch: str = ""
 
 
+@dataclass
+class PatchCoords:
+    bank: int
+    patch: int
+
+
+@dataclass
+class Templates:
+    type: str = "templates"
+    current_doc_id: Optional[int] = None
+
+
+@dataclass
+class TemplatePref:
+    source_patch_coords: PatchCoords
+    applies_to: Union[List[int], List[Literal["all"]]]
+    version: int
+    name: str = ""
+    type: str = "template_pref"
+
+
 # Calling patch with no parameters instantiates the factory default.
 DEFAULT_PATCH = Patch()
 MODEL_MAP = {
@@ -693,4 +709,8 @@ MODEL_MAP = {
     "midi_prefs": MidiPrefs,
     "midi_pref": MidiPref,
     "assign": Assign,
+    "templates": Templates,
+    "template_pref": lambda x=dict(
+        source_patch_coords={"bank": 0, "patch": 0}, applies_to=["all"], version=0
+    ): TemplatePref(**x),
 }
