@@ -3,4 +3,4 @@ __pycache__
 venv/
 .vscode/
 *.log
-*.db
+*.db.venv/
