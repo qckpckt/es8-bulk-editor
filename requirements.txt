@@ -1,0 +1,5 @@
+typer[all]>=0.7.0,<0.8
+asciimatics>=1.14.0
+tinydb>=4.7.1
+rich
+PySide6

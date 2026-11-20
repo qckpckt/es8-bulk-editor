@@ -49,7 +49,7 @@ def set_global_assign_default(
 
 
 def create_input_array(index, value, value_type, array_type):
-    input_array = defaults.default_values(None, mappings.array_lengths_map[array_type])
+    input_array = defaults.values(None, mappings.array_lengths_map[array_type])
     if value_type == "integer":
         input_array[index] = value
     else:
